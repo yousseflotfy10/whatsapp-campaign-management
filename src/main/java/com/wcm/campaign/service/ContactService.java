@@ -1,6 +1,7 @@
 package com.wcm.campaign.service;
 
 import com.wcm.campaign.dto.BulkUploadResult;
+import com.wcm.campaign.dto.ContactListResponse;
 import com.wcm.campaign.dto.ContactRequest;
 import com.wcm.campaign.model.Contact;
 import com.wcm.campaign.repository.ContactRepository;
@@ -18,10 +19,12 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class ContactService {
@@ -43,13 +46,26 @@ public class ContactService {
             throw new IllegalArgumentException("Contact phone number is required");
         }
 
+        String normalizedNumbers = normalizeNumbers(request.getContactNumbers());
+        Optional<Contact> existing = contactRepository
+            .findFirstByContactNumbersAndIsActiveTrue(normalizedNumbers);
+
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
         Contact contact = new Contact();
 
         contact.setContactName(request.getContactName().trim());
 
-        contact.setContactNumbers(normalizeNumbers(request.getContactNumbers()));
+        contact.setContactNumbers(normalizedNumbers);
 
-        contact.setListId(request.getListId());
+        contact.setListId(request.getListId() == null || request.getListId().isBlank()
+            ? shortHash(contact.getContactName() + "|" + normalizedNumbers)
+            : request.getListId());
+        contact.setListName(request.getListName() == null || request.getListName().isBlank()
+            ? "Manual contact"
+            : request.getListName().trim());
         contact.setListHash(request.getListHash());
         contact.setIsActive(true);
 
@@ -64,6 +80,24 @@ public class ContactService {
     @Transactional(readOnly = true)
     public List<Contact> getActiveContacts() {
         return contactRepository.findByIsActive(true);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ContactListResponse> getActiveListIds() {
+        Map<String, String> names = new LinkedHashMap<>();
+
+        for (Contact contact : contactRepository.findByIsActive(true)) {
+            names.putIfAbsent(
+                    contact.getListId(),
+                    contact.getListName() == null || contact.getListName().isBlank()
+                            ? contact.getListId()
+                            : contact.getListName()
+            );
+        }
+
+        return names.entrySet().stream()
+                .map(entry -> new ContactListResponse(entry.getKey(), entry.getValue()))
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -96,6 +130,10 @@ public class ContactService {
 
         if (request.getListId() != null) {
             contact.setListId(request.getListId());
+        }
+
+        if (request.getListName() != null) {
+            contact.setListName(request.getListName().trim());
         }
 
         if (request.getListHash() != null) {
@@ -152,6 +190,7 @@ public class ContactService {
             }
 
             List<BulkContactRow> contacts = new ArrayList<>(uniqueContacts.values());
+            String listName = getFileListName(file);
 
             String listHash = generateListHash(contacts);
 
@@ -161,6 +200,28 @@ public class ContactService {
                 return new BulkUploadResult(listHash, rows.size(), 0, true, "Duplicate contact list. " + "The uploaded file was not saved.");
             }
 
+            Set<String> existingNumbers = new HashSet<>();
+            for (Contact contact : contactRepository.findByIsActive(true)) {
+                existingNumbers.addAll(splitNumbers(contact.getContactNumbers()));
+            }
+
+            Set<String> uploadedNumbers = new HashSet<>();
+            contacts.removeIf(row -> {
+                List<String> newNumbers = splitNumbers(row.getPhoneNumbers()).stream()
+                        .filter(number -> !existingNumbers.contains(number))
+                        .filter(uploadedNumbers::add)
+                        .toList();
+
+                row.setPhoneNumbers(String.join(",", newNumbers));
+                return newNumbers.isEmpty();
+            });
+
+            if (contacts.isEmpty()) {
+                return new BulkUploadResult(listHash, rows.size(), 0, true, "All contacts already exist. Choose an existing list from the campaign list menu.");
+            }
+
+            listHash = generateListHash(contacts);
+
             for (BulkContactRow row : contacts) {
 
                 Contact contact = new Contact();
@@ -169,7 +230,9 @@ public class ContactService {
 
                 contact.setContactNumbers(row.getPhoneNumbers());
 
-                contact.setListId(null);
+                contact.setListId(listHash);
+
+                contact.setListName(listName);
 
                 contact.setListHash(listHash);
 
@@ -210,15 +273,15 @@ public class ContactService {
                 }
             }
 
-            String[] columns = line.split(",", -1);
+            List<String> columns = parseCsvLine(line);
 
-            if (columns.length < 2) {
+            if (columns.size() < 2) {
                 continue;
             }
 
-            String name = columns[0].trim();
+            String name = columns.get(0).trim();
 
-            String numbers = columns[1].trim();
+            String numbers = String.join(",", columns.subList(1, columns.size())).trim();
 
             rows.add(new BulkContactRow(name, numbers));
         }
@@ -252,6 +315,22 @@ public class ContactService {
         }
     }
 
+    private String shortHash(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder result = new StringBuilder("manual-");
+
+            for (int index = 0; index < 8; index++) {
+                result.append(String.format("%02x", hash[index]));
+            }
+
+            return result.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 algorithm is not available", e);
+        }
+    }
+
     private void validateFile(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("Please upload a CSV file");
@@ -265,12 +344,22 @@ public class ContactService {
         }
     }
 
+    private String getFileListName(MultipartFile file) {
+        String filename = file.getOriginalFilename();
+        if (filename == null || filename.isBlank()) {
+            return "Imported contact list";
+        }
+
+        int extensionIndex = filename.lastIndexOf('.');
+        return (extensionIndex > 0 ? filename.substring(0, extensionIndex) : filename).trim();
+    }
+
     private String normalizeNumbers(String numbers) {
         if (numbers == null || numbers.trim().isEmpty()) {
             throw new IllegalArgumentException("Phone number is required");
         }
 
-        String[] parts = numbers.split(",");
+        String[] parts = numbers.split("\\s*(?:,|;|\\||/|\\r?\\n)+\\s*");
 
         List<String> normalized = new ArrayList<>();
 
@@ -283,52 +372,158 @@ public class ContactService {
         return String.join(",", normalized);
     }
 
+    private List<String> splitNumbers(String numbers) {
+        if (numbers == null || numbers.isBlank()) {
+            return List.of();
+        }
+
+        return List.of(numbers.split("\\s*(?:,|;|\\||/|\\r?\\n)+\\s*"));
+    }
+
+    private List<String> parseCsvLine(String line) {
+
+        List<String> columns = new ArrayList<>();
+        StringBuilder value = new StringBuilder();
+        boolean quoted = false;
+
+        for (int index = 0; index < line.length(); index++) {
+            char character = line.charAt(index);
+
+            if (character == '"') {
+                if (quoted && index + 1 < line.length() && line.charAt(index + 1) == '"') {
+                    value.append('"');
+                    index++;
+                } else {
+                    quoted = !quoted;
+                }
+            } else if (character == ',' && !quoted) {
+                columns.add(value.toString());
+                value.setLength(0);
+            } else {
+                value.append(character);
+            }
+        }
+
+        columns.add(value.toString());
+        return columns;
+    }
+
     private String normalizeNumber(String number) {
+
         if (number == null || number.trim().isEmpty()) {
             throw new IllegalArgumentException("Phone number cannot be empty");
         }
 
-        number = number.trim();
+        // Remove spaces, -, (, )
+        number = number.trim().replaceAll("[\\s\\-()]+", "");
 
-        number = number.replaceAll("[\\s\\-()]+", "");
-
+        // ---------------------------------------------------------
+        // CASE 1: Number starts with +
+        // Example: +201012345679
+        // ---------------------------------------------------------
         if (number.startsWith("+")) {
+
             String digits = number.substring(1);
 
             if (!digits.matches("\\d+")) {
-                throw new IllegalArgumentException("Invalid phone number: " + number);
+                throw new IllegalArgumentException(
+                        "Invalid phone number: " + number
+                );
             }
 
             if (digits.length() < 10 || digits.length() > 15) {
-                throw new IllegalArgumentException("Invalid phone number length: " + number);
+                throw new IllegalArgumentException(
+                        "Invalid phone number length: " + number
+                );
             }
 
             return "+" + digits;
         }
 
+        // ---------------------------------------------------------
+        // CASE 2: International number starts with 00
+        // Example: 00201012345679
+        // Result: +201012345679
+        // ---------------------------------------------------------
         if (number.startsWith("00")) {
 
             String digits = number.substring(2);
 
             if (!digits.matches("\\d+")) {
-                throw new IllegalArgumentException("Invalid phone number: " + number);
+                throw new IllegalArgumentException(
+                        "Invalid phone number: " + number
+                );
             }
 
             if (digits.length() < 10 || digits.length() > 15) {
-                throw new IllegalArgumentException("Invalid phone number length: " + number);
+                throw new IllegalArgumentException(
+                        "Invalid phone number length: " + number
+                );
             }
 
             return "+" + digits;
         }
 
-        if (!number.matches("\\d+")) {
-            throw new IllegalArgumentException("Invalid phone number: " + number);
+        // ---------------------------------------------------------
+        // CASE 3: Egyptian international format without +
+        // Example: 201012345679
+        // Result: +201012345679
+        // ---------------------------------------------------------
+        if (number.startsWith("20") && number.length() == 12) {
+
+            String localPart = number.substring(2);
+
+            if (!localPart.matches("1\\d{9}")) {
+                throw new IllegalArgumentException(
+                        "Invalid Egyptian phone number: " + number
+                );
+            }
+
+            return "+" + number;
         }
 
-        if (number.length() == 10 || number.length() == 11) {
-            return number;
+        // ---------------------------------------------------------
+        // CASE 4: Egyptian local format
+        // Example: 01012345679
+        // Result: +201012345679
+        // ---------------------------------------------------------
+        if (number.length() == 11 && number.startsWith("01")) {
+
+            String localPart = number.substring(1);
+
+            if (!localPart.matches("1\\d{9}")) {
+                throw new IllegalArgumentException(
+                        "Invalid Egyptian phone number: " + number
+                );
+            }
+
+            return "+20" + localPart;
         }
-        throw new IllegalArgumentException("Invalid phone number: " + number);
+
+        // ---------------------------------------------------------
+        // CASE 5: Egyptian local number without leading 0
+        // Example: 1012345679
+        // Result: +201012345679
+        // ---------------------------------------------------------
+        if (number.length() == 10 && number.startsWith("1")) {
+
+            return "+20" + number;
+        }
+
+        // ---------------------------------------------------------
+        // CASE 6: Other international numbers without +
+        // Keep support for generic 10-15 digit numbers.
+        // ---------------------------------------------------------
+        if (number.matches("\\d+") &&
+                number.length() >= 10 &&
+                number.length() <= 15) {
+
+            return "+" + number;
+        }
+
+        throw new IllegalArgumentException(
+                "Invalid phone number: " + number
+        );
     }
 
     private static class BulkContactRow {

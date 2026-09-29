@@ -7,25 +7,30 @@ import jakarta.validation.constraints.Size;
 public class SignupRequest {
 
     @NotBlank(message = "Username is required")
-    @Size(min = 3, max = 50, message = "Username must be between 3 and 50 characters")
+    @Size(min = 3, max = 100, message = "Username must be between 3 and 100 characters")
     private String username;
-
 
     @NotBlank(message = "Email is required")
     @Email(message = "Invalid email format")
+    @Size(max = 150, message = "Email cannot exceed 150 characters")
     private String email;
 
-
     @NotBlank(message = "Password is required")
-    @Size(min = 8, max = 100, message = "Password must be at least 8 characters")
+    @Size(min = 8, max = 100, message = "Password must be between 8 and 100 characters")
     private String password;
 
+    public SignupRequest() {
+    }
 
-    @NotBlank(message = "Password confirmation is required")
-    private String confirmPassword;
-
-
-    public SignupRequest() {}
+    public SignupRequest(
+            String username,
+            String email,
+            String password
+    ) {
+        this.username = username;
+        this.email = email;
+        this.password = password;
+    }
 
     public String getUsername() {
         return username;
@@ -35,7 +40,6 @@ public class SignupRequest {
         this.username = username;
     }
 
-
     public String getEmail() {
         return email;
     }
@@ -44,21 +48,11 @@ public class SignupRequest {
         this.email = email;
     }
 
-
     public String getPassword() {
         return password;
     }
 
     public void setPassword(String password) {
         this.password = password;
-    }
-
-
-    public String getConfirmPassword() {
-        return confirmPassword;
-    }
-
-    public void setConfirmPassword(String confirmPassword) {
-        this.confirmPassword = confirmPassword;
     }
 }

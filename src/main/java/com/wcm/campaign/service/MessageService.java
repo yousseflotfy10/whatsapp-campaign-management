@@ -4,31 +4,42 @@ import com.wcm.campaign.model.Campaign;
 import com.wcm.campaign.model.Contact;
 import com.wcm.campaign.model.Message;
 import com.wcm.campaign.model.Template;
+import com.wcm.campaign.repository.CampaignRepository;
 import com.wcm.campaign.repository.MessageRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class MessageService {
 
     private final MessageRepository messageRepository;
-    private final CampaignService campaignService;
+    private final CampaignRepository campaignRepository;
     private final ContactService contactService;
     private final TemplateService templateService;
 
-    public MessageService(MessageRepository messageRepository, CampaignService campaignService, ContactService contactService, TemplateService templateService) {
+    public MessageService(
+            MessageRepository messageRepository,
+            CampaignRepository campaignRepository,
+            ContactService contactService,
+            TemplateService templateService
+    ) {
         this.messageRepository = messageRepository;
-        this.campaignService = campaignService;
+        this.campaignRepository = campaignRepository;
         this.contactService = contactService;
         this.templateService = templateService;
     }
 
     @Transactional
     public Message createMessage(Long campaignId, Long contactId, Long templateId) {
-        Campaign campaign = campaignService.getById(campaignId);
+
+        Campaign campaign = campaignRepository.findById(campaignId).orElseThrow(() ->
+                                new RuntimeException("Campaign not found with id: " + campaignId));
 
         Contact contact = contactService.getContactById(contactId);
 
@@ -37,14 +48,81 @@ public class MessageService {
         Message message = new Message();
 
         message.setCampaign(campaign);
+
         message.setContact(contact);
+
         message.setTemplate(template);
 
         message.setMessageContent(generateMessageContent(template.getTemplateContent(), contact));
 
+        message.setMessageType("TEMPLATE");
+
         message.setStatus("PENDING");
 
         return messageRepository.save(message);
+    }
+
+    @Transactional
+    public void generateMessagesForCampaign(Long campaignId) {
+
+        Campaign campaign = campaignRepository.findById(campaignId).orElseThrow(() ->
+                                new RuntimeException("Campaign not found with id: " + campaignId));
+
+        if (!"APPROVED".equals(campaign.getStatus())) {
+            throw new IllegalStateException("Messages can only be generated for an APPROVED campaign");
+        }
+
+        if (campaign.getTemplate() == null) {
+            throw new IllegalStateException("Campaign does not have a template");
+        }
+
+        String listIdString = campaign.getListId();
+
+        if (
+                listIdString == null ||
+                        listIdString.trim().isEmpty()
+        ) {
+            throw new IllegalStateException(
+                    "Campaign does not have a contact list"
+            );
+        }
+
+        Set<String> campaignListIds = Arrays.stream(listIdString.split(","))
+                        .map(String::trim)
+                        .filter(id -> !id.isEmpty())
+                        .collect(Collectors.toSet());
+
+        List<Contact> contacts = contactService.getAllContacts()
+                        .stream()
+                        .filter(Contact::getIsActive)
+                        .filter(contact -> campaignListIds.contains(contact.getListId()))
+                        .toList();
+
+        if (contacts.isEmpty()) {
+            throw new IllegalStateException("No active contacts found for this campaign");
+        }
+
+        Template template = campaign.getTemplate();
+
+        for (Contact contact : contacts) {
+
+            Message message = new Message();
+
+            message.setCampaign(campaign);
+
+            message.setContact(contact);
+
+            message.setTemplate(template);
+
+            message.setMessageContent(generateMessageContent(template.getTemplateContent(), contact)
+            );
+
+            message.setMessageType("TEMPLATE");
+
+            message.setStatus("PENDING");
+
+            messageRepository.save(message);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -90,7 +168,6 @@ public class MessageService {
                 if (!"PENDING".equals(message.getStatus())) {
                     throw new IllegalStateException("Only a new message can be set to PENDING");
                 }
-
                 yield message;
             }
 
@@ -108,6 +185,7 @@ public class MessageService {
         }
 
         message.setStatus("SENT");
+
         message.setSentAt(LocalDateTime.now());
 
         return messageRepository.save(message);
@@ -144,6 +222,9 @@ public class MessageService {
     }
 
     private String generateMessageContent(String templateContent, Contact contact) {
+        if (templateContent == null) {
+            return "";
+        }
 
         String contactName = contact.getContactName();
 

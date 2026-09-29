@@ -22,6 +22,9 @@ public class Contact {
     @Column(name = "listid", columnDefinition = "TEXT")
     private String listId;
 
+    @Column(name = "listname", length = 255)
+    private String listName;
+
     @Column(name = "listhash", columnDefinition = "TEXT")
     private String listHash;
 
@@ -83,6 +86,14 @@ public class Contact {
 
     public void setListId(String listId) {
         this.listId = listId;
+    }
+
+    public String getListName() {
+        return listName;
+    }
+
+    public void setListName(String listName) {
+        this.listName = listName;
     }
 
     public String getListHash() {

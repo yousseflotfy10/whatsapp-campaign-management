@@ -23,10 +23,12 @@ public class TemplateService {
         Template template = new Template();
 
         template.setTemplateName(request.getTemplateName().trim());
-
         template.setTemplateContent(request.getTemplateContent().trim());
 
-        template.setStatus("DRAFT");
+        template.setLanguage("en_US");
+        template.setCategory("UTILITY");
+
+        template.setStatus("PENDING");
 
         return templateRepository.save(template);
     }
@@ -43,7 +45,6 @@ public class TemplateService {
 
     @Transactional(readOnly = true)
     public List<Template> getByStatus(String status) {
-
         return templateRepository.findByStatus(status.trim().toUpperCase());
     }
 
@@ -62,12 +63,11 @@ public class TemplateService {
 
         Template template = getById(id);
 
-        if (!"DRAFT".equals(template.getStatus())) {
-            throw new IllegalStateException("Only DRAFT templates can be updated");
+        if (!"PENDING".equals(template.getStatus())) {
+            throw new IllegalStateException("Only PENDING templates can be updated");
         }
 
         template.setTemplateName(request.getTemplateName().trim());
-
         template.setTemplateContent(request.getTemplateContent().trim());
 
         return templateRepository.save(template);
@@ -78,8 +78,8 @@ public class TemplateService {
 
         Template template = getById(id);
 
-        if (!"DRAFT".equals(template.getStatus())) {
-            throw new IllegalStateException("Only DRAFT templates can be approved");
+        if (!"PENDING".equals(template.getStatus())) {
+            throw new IllegalStateException("Only PENDING templates can be approved");
         }
 
         template.setStatus("APPROVED");
@@ -92,8 +92,8 @@ public class TemplateService {
 
         Template template = getById(id);
 
-        if (!"DRAFT".equals(template.getStatus())) {
-            throw new IllegalStateException("Only DRAFT templates can be rejected");
+        if (!"PENDING".equals(template.getStatus())) {
+            throw new IllegalStateException("Only PENDING templates can be rejected");
         }
 
         template.setStatus("REJECTED");
@@ -109,6 +109,7 @@ public class TemplateService {
         if ("APPROVED".equals(template.getStatus())) {
             throw new IllegalStateException("Approved templates cannot be deleted");
         }
+
         templateRepository.delete(template);
     }
 }

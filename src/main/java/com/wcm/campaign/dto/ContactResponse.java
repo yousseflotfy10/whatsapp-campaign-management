@@ -8,6 +8,7 @@ public class ContactResponse {
     private String contactName;
     private String contactNumbers;
     private String listId;
+    private String listName;
     private Boolean active;
 
     public ContactResponse() {}
@@ -17,6 +18,7 @@ public class ContactResponse {
         this.contactName = contact.getContactName();
         this.contactNumbers = contact.getContactNumbers();
         this.listId = contact.getListId();
+        this.listName = contact.getListName();
         this.active = contact.getIsActive();
     }
 
@@ -50,6 +52,14 @@ public class ContactResponse {
 
     public void setListId(String listId) {
         this.listId = listId;
+    }
+
+    public String getListName() {
+        return listName;
+    }
+
+    public void setListName(String listName) {
+        this.listName = listName;
     }
 
     public Boolean getActive() {

@@ -9,34 +9,59 @@ public class Template {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "template_id")
     private Long templateId;
 
-    @Column(nullable = false, unique = true)
+    @Column(name = "template_name", nullable = false)
     private String templateName;
 
-    @Column(columnDefinition = "TEXT")
+    @Column(name = "template_content", nullable = false, columnDefinition = "TEXT")
     private String templateContent;
 
-    @Column(unique = true)
-    private String providerTemplateId;
-
-    @Column(nullable = false)
-    private String language;
-
-    @Column(nullable = false)
-    private String category;
-
-    @Column(nullable = false)
+    @Column(name = "status", nullable = false)
     private String status;
 
-    @Column(nullable = false)
+    @Column(name = "category")
+    private String category;
+
+    @Column(name = "language")
+    private String language;
+
+    @Column(name = "provider_template_id")
+    private String providerTemplateId;
+
+    @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
-    public Template() {
-        this.status = "PENDING";
-        this.createdAt = LocalDateTime.now();
+
+    @PrePersist
+    protected void onCreate() {
+
+        LocalDateTime now = LocalDateTime.now();
+
+        if (createdAt == null) {
+            createdAt = now;
+        }
+
+        if (updatedAt == null) {
+            updatedAt = now;
+        }
+
+        if (status == null || status.isBlank()) {
+            status = "DRAFT";
+        }
+
+        if (language == null || language.isBlank()) {
+            language = "en_US";
+        }
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
     }
 
     public Long getTemplateId() {
@@ -63,20 +88,12 @@ public class Template {
         this.templateContent = templateContent;
     }
 
-    public String getProviderTemplateId() {
-        return providerTemplateId;
+    public String getStatus() {
+        return status;
     }
 
-    public void setProviderTemplateId(String providerTemplateId) {
-        this.providerTemplateId = providerTemplateId;
-    }
-
-    public String getLanguage() {
-        return language;
-    }
-
-    public void setLanguage(String language) {
-        this.language = language;
+    public void setStatus(String status) {
+        this.status = status;
     }
 
     public String getCategory() {
@@ -87,12 +104,20 @@ public class Template {
         this.category = category;
     }
 
-    public String getStatus() {
-        return status;
+    public String getLanguage() {
+        return language;
     }
 
-    public void setStatus(String status) {
-        this.status = status;
+    public void setLanguage(String language) {
+        this.language = language;
+    }
+
+    public String getProviderTemplateId() {
+        return providerTemplateId;
+    }
+
+    public void setProviderTemplateId(String providerTemplateId) {
+        this.providerTemplateId = providerTemplateId;
     }
 
     public LocalDateTime getCreatedAt() {
@@ -109,10 +134,5 @@ public class Template {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
-    }
-
-    @PreUpdate
-    protected void onUpdate() {
-        this.updatedAt = LocalDateTime.now();
     }
 }
