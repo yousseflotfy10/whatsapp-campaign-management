@@ -6,6 +6,8 @@ import com.wcm.campaign.model.Role;
 import com.wcm.campaign.model.User;
 import com.wcm.campaign.repository.PermissionRepository;
 import com.wcm.campaign.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,18 +16,26 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 @Configuration
 public class DataInitializer {
 
+    private static final Logger logger = LoggerFactory.getLogger(DataInitializer.class);
+
     @Bean
-    CommandLineRunner initializeData(PermissionRepository permissionRepository, UserRepository userRepository, PasswordEncoder passwordEncoder)
-    {
+    CommandLineRunner initializeData(
+            PermissionRepository permissionRepository,
+            UserRepository userRepository,
+            PasswordEncoder passwordEncoder
+    ) {
         return args -> {
+
+            logger.info("Starting application data initialization");
+
             for (Permission permission : Permission.values()) {
                 if (permissionRepository.findByPermissionName(permission).isEmpty()) {
                     PermissionEntity permissionEntity = new PermissionEntity(permission, createDescription(permission));
                     permissionRepository.save(permissionEntity);
+                    logger.info("Permission initialized: {}", permission.name());
                 }
             }
 
-            // Create system Admin
             if (!userRepository.existsByRole(Role.ADMIN)) {
                 User admin = new User();
                 admin.setUsername("admin");
@@ -33,8 +43,13 @@ public class DataInitializer {
                 admin.setPasswordHashed(passwordEncoder.encode("Admin@123"));
                 admin.setRole(Role.ADMIN);
                 userRepository.save(admin);
-                System.out.println("System Admin created successfully.");
+
+                logger.info("System administrator created successfully");
+            } else {
+                logger.info("System administrator already exists");
             }
+
+            logger.info("Application data initialization completed");
         };
     }
 

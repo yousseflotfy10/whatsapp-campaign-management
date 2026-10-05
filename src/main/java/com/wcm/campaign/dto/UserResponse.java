@@ -2,6 +2,7 @@ package com.wcm.campaign.dto;
 
 import com.wcm.campaign.model.Permission;
 import com.wcm.campaign.model.User;
+import com.wcm.campaign.model.UserPermission;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -13,10 +14,11 @@ public class UserResponse {
     private String username;
     private String email;
     private String role;
-    private String accessToken;
-    private String refreshToken;
     private List<String> permissions;
     private LocalDateTime createdAt;
+    private User.AccountStatus status;
+    private String accessToken;
+    private String refreshToken;
 
     public UserResponse() {
     }
@@ -27,7 +29,8 @@ public class UserResponse {
             String email,
             String role,
             List<String> permissions,
-            LocalDateTime createdAt
+            LocalDateTime createdAt,
+            User.AccountStatus status
     ) {
         this.userId = userId;
         this.username = username;
@@ -35,29 +38,23 @@ public class UserResponse {
         this.role = role;
         this.permissions = permissions;
         this.createdAt = createdAt;
+        this.status = status;
     }
 
     public static UserResponse fromUser(User user) {
 
         List<String> permissions;
-        // Giving Admin all permissions
-        if (user.getRole().name().equals("ADMIN")) {
 
-            permissions = List.of(Permission.values())
-                    .stream()
+        if (user.getRole() != null && user.getRole().name().equals("ADMIN")) {
+            permissions = List.of(
+                            Permission.values()
+                    ).stream()
                     .map(Enum::name)
                     .collect(Collectors.toList());
-
         } else {
-
-            permissions = user.getUserPermissions()
-                    .stream()
-                    .map(userPermission ->
-                            userPermission
-                                    .getPermission()
-                                    .getPermissionName()
-                                    .name()
-                    )
+            permissions = user.getUserPermissions().stream()
+                    .map(UserPermission::getPermission)
+                    .map(permission -> permission.getPermissionName().name())
                     .sorted()
                     .collect(Collectors.toList());
         }
@@ -68,7 +65,8 @@ public class UserResponse {
                 user.getEmail(),
                 user.getRole().name(),
                 permissions,
-                user.getCreatedAt()
+                user.getCreatedAt(),
+                user.getStatus()
         );
     }
 
@@ -104,22 +102,6 @@ public class UserResponse {
         this.role = role;
     }
 
-    public String getAccessToken() {
-        return accessToken;
-    }
-
-    public void setAccessToken(String accessToken) {
-        this.accessToken = accessToken;
-    }
-
-    public String getRefreshToken() {
-        return refreshToken;
-    }
-
-    public void setRefreshToken(String refreshToken) {
-        this.refreshToken = refreshToken;
-    }
-
     public List<String> getPermissions() {
         return permissions;
     }
@@ -134,5 +116,29 @@ public class UserResponse {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public User.AccountStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(User.AccountStatus status) {
+        this.status = status;
+    }
+
+    public String getAccessToken() {
+        return accessToken;
+    }
+
+    public void setAccessToken(String accessToken) {
+        this.accessToken = accessToken;
+    }
+
+    public String getRefreshToken() {
+        return refreshToken;
+    }
+
+    public void setRefreshToken(String refreshToken) {
+        this.refreshToken = refreshToken;
     }
 }

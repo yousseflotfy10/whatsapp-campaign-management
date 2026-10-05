@@ -3,6 +3,8 @@ package com.wcm.campaign.model;
 import jakarta.persistence.*;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Table(name = "contacts")
@@ -19,15 +21,6 @@ public class Contact {
     @Column(name = "contactnumbers", nullable = false, columnDefinition = "TEXT")
     private String contactNumbers;
 
-    @Column(name = "listid", columnDefinition = "TEXT")
-    private String listId;
-
-    @Column(name = "listname", length = 255)
-    private String listName;
-
-    @Column(name = "listhash", columnDefinition = "TEXT")
-    private String listHash;
-
     @Column(name = "isactive", nullable = false)
     private Boolean isActive = true;
 
@@ -36,6 +29,12 @@ public class Contact {
 
     @Column(name = "updatedat")
     private LocalDateTime updatedAt;
+
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(name = "contact_list_member", joinColumns = @JoinColumn(name = "contact_id", referencedColumnName = "contactid"),
+            inverseJoinColumns = @JoinColumn(name = "list_id", referencedColumnName = "listid"),
+            uniqueConstraints = @UniqueConstraint(columnNames = {"contact_id", "list_id"}))
+    private Set<ContactList> contactLists = new HashSet<>();
 
     public Contact() {
     }
@@ -80,30 +79,6 @@ public class Contact {
         this.contactNumbers = contactNumbers;
     }
 
-    public String getListId() {
-        return listId;
-    }
-
-    public void setListId(String listId) {
-        this.listId = listId;
-    }
-
-    public String getListName() {
-        return listName;
-    }
-
-    public void setListName(String listName) {
-        this.listName = listName;
-    }
-
-    public String getListHash() {
-        return listHash;
-    }
-
-    public void setListHash(String listHash) {
-        this.listHash = listHash;
-    }
-
     public Boolean getIsActive() {
         return isActive;
     }
@@ -126,5 +101,23 @@ public class Contact {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public Set<ContactList> getContactLists() {
+        return contactLists;
+    }
+
+    public void setContactLists(Set<ContactList> contactLists) {
+        this.contactLists = contactLists;
+    }
+
+    public void addContactList(ContactList contactList) {
+        this.contactLists.add(contactList);
+        contactList.getContacts().add(this);
+    }
+
+    public void removeContactList(ContactList contactList) {
+        this.contactLists.remove(contactList);
+        contactList.getContacts().remove(this);
     }
 }

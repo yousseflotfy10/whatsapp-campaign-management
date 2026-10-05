@@ -32,3 +32,11 @@ build/
 
 ### VS Code ###
 .vscode/
+
+logs/
+*.log
+.env
+
+target/
+.idea/
+*.iml

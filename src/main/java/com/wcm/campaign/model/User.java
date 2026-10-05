@@ -10,6 +10,12 @@ import java.util.Set;
 @Table(name = "users")
 public class User {
 
+    public enum AccountStatus {
+        PENDING,
+        ACTIVE,
+        REJECTED
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "userid")
@@ -43,6 +49,13 @@ public class User {
     @Column(name = "createdat", nullable = false)
     private LocalDateTime createdAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 20)
+    private AccountStatus status;
+
+    @Column(name = "approvedat")
+    private LocalDateTime approvedAt;
+
     public User() {
     }
 
@@ -50,6 +63,10 @@ public class User {
     protected void onCreate() {
         if (createdAt == null) {
             createdAt = LocalDateTime.now();
+        }
+
+        if (status == null) {
+            status = AccountStatus.PENDING;
         }
     }
 
@@ -149,5 +166,21 @@ public class User {
 
     public void setCreatedAt(LocalDateTime createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public AccountStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(AccountStatus status) {
+        this.status = status;
+    }
+
+    public LocalDateTime getApprovedAt() {
+        return approvedAt;
+    }
+
+    public void setApprovedAt(LocalDateTime approvedAt) {
+        this.approvedAt = approvedAt;
     }
 }

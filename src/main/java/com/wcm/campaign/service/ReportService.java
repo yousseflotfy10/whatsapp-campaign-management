@@ -1,22 +1,25 @@
 package com.wcm.campaign.service;
 
 import com.wcm.campaign.model.Campaign;
-import com.wcm.campaign.model.Contact;
+import com.wcm.campaign.model.ContactList;
 import com.wcm.campaign.model.Message;
 import com.wcm.campaign.repository.CampaignRepository;
-import com.wcm.campaign.repository.ContactRepository;
+import com.wcm.campaign.repository.ContactListRepository;
 import com.wcm.campaign.repository.MessageRepository;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,24 +30,30 @@ import java.util.stream.Collectors;
 @Service
 public class ReportService {
 
+    private static final Logger logger = LoggerFactory.getLogger(ReportService.class);
+
     private final CampaignRepository campaignRepository;
     private final MessageRepository messageRepository;
-    private final ContactRepository contactRepository;
+    private final ContactListRepository contactListRepository;
 
-    public ReportService(CampaignRepository campaignRepository, MessageRepository messageRepository, ContactRepository contactRepository) {
+    public ReportService(
+            CampaignRepository campaignRepository,
+            MessageRepository messageRepository,
+            ContactListRepository contactListRepository
+    ) {
         this.campaignRepository = campaignRepository;
         this.messageRepository = messageRepository;
-        this.contactRepository = contactRepository;
+        this.contactListRepository = contactListRepository;
     }
 
     @Transactional(readOnly = true)
     public byte[] exportCampaignReport(String range) {
+
+        logger.info("Generating campaign report for range {}", range);
+
         List<Campaign> campaigns = campaignRepository.findAll()
                 .stream()
-                .sorted(Comparator.comparing(
-                        Campaign::getCreatedAt,
-                        Comparator.nullsLast(Comparator.reverseOrder())
-                ))
+                .sorted(Comparator.comparing(Campaign::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
                 .toList();
 
         List<Campaign> selectedCampaigns = switch (normalizeRange(range)) {
@@ -64,9 +73,12 @@ public class ReportService {
                 .toList();
 
         Map<String, String> listNames = new LinkedHashMap<>();
-        for (Contact contact : contactRepository.findByIsActive(true)) {
-            if (contact.getListName() != null && !contact.getListName().isBlank()) {
-                listNames.putIfAbsent(contact.getListId(), contact.getListName());
+
+        for (ContactList contactList : contactListRepository.findAll()) {
+            if (contactList.getListId() != null
+                    && contactList.getListName() != null
+                    && !contactList.getListName().isBlank()) {
+                listNames.put(contactList.getListId(), contactList.getListName());
             }
         }
 
@@ -76,8 +88,14 @@ public class ReportService {
 
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             workbook.write(output);
+
+            logger.info("Campaign report generated successfully. Campaigns: {}, Messages: {}",
+                    selectedCampaigns.size(), messages.size());
+
             return output.toByteArray();
+
         } catch (IOException exception) {
+            logger.error("Unable to create campaign Excel report", exception);
             throw new IllegalStateException("Unable to create Excel report", exception);
         }
     }
@@ -88,18 +106,21 @@ public class ReportService {
             List<Message> messages,
             Map<String, String> listNames
     ) {
-        String[] headers = {
-                "Campaign ID", "Campaign", "Status", "Sender", "Lists",
-                "Template", "Created", "Approved", "Messages", "Delivered",
-                "Sent", "Failed", "Delivery Rate"
-        };
-        writeHeader(sheet, headers);
 
+        String[] headers = {
+                "Campaign ID", "Campaign", "Status", "Sender", "Lists", "Template",
+                "Created", "Approved", "Messages", "Delivered", "Sent", "Failed", "Delivery Rate"
+        };
+
+        writeHeader(sheet, headers);
         int rowIndex = 1;
+
         for (Campaign campaign : campaigns) {
             List<Message> campaignMessages = messages.stream()
-                    .filter(message -> message.getCampaign().getCampaignId().equals(campaign.getCampaignId()))
+                    .filter(message -> message.getCampaign() != null
+                            && message.getCampaign().getCampaignId().equals(campaign.getCampaignId()))
                     .toList();
+
             int total = campaignMessages.size();
             int delivered = countStatus(campaignMessages, "DELIVERED");
             int sent = countStatus(campaignMessages, "SENT");
@@ -110,7 +131,7 @@ public class ReportService {
             write(row, 1, campaign.getCampaignName());
             write(row, 2, campaign.getStatus());
             write(row, 3, campaign.getSenderName());
-            write(row, 4, formatListNames(campaign.getListId(), listNames, campaign.getCampaignName()));
+            write(row, 4, formatListNames(campaign.getListId(), listNames));
             write(row, 5, campaign.getTemplate() == null ? "" : campaign.getTemplate().getTemplateName());
             write(row, 6, campaign.getCreatedAt());
             write(row, 7, campaign.getApprovedAt());
@@ -118,37 +139,36 @@ public class ReportService {
             write(row, 9, delivered);
             write(row, 10, sent);
             write(row, 11, failed);
-            write(row, 12, total == 0 ? "0%" : Math.round((delivered * 100.0) / total) + "%");
+            write(row, 12, total == 0 ? "0%" : Math.round(delivered * 100.0 / total) + "%");
         }
 
         autosize(sheet, headers.length);
     }
 
-        private String formatListNames(
-            String listIds,
-            Map<String, String> listNames,
-            String campaignName
-        ) {
+    private String formatListNames(String listIds, Map<String, String> listNames) {
+
         if (listIds == null || listIds.isBlank()) {
             return "";
         }
 
-        return java.util.Arrays.stream(listIds.split(","))
+        return Arrays.stream(listIds.split(","))
                 .map(String::trim)
                 .filter(id -> !id.isEmpty())
-                .map(id -> listNames.getOrDefault(id, campaignName + " list"))
+                .map(id -> listNames.getOrDefault(id, "Unknown list"))
                 .distinct()
                 .collect(Collectors.joining(", "));
     }
 
     private void writeMessageDetails(Sheet sheet, List<Message> messages) {
+
         String[] headers = {
                 "Message ID", "Campaign", "Contact", "Phone Numbers", "Status",
                 "Message Content", "Sent At", "Delivered At", "Failed At", "Failure Reason"
         };
-        writeHeader(sheet, headers);
 
+        writeHeader(sheet, headers);
         int rowIndex = 1;
+
         for (Message message : messages) {
             Row row = sheet.createRow(rowIndex++);
             write(row, 0, message.getMessageId());
@@ -173,6 +193,7 @@ public class ReportService {
     }
 
     private String normalizeRange(String range) {
+
         if (range == null) {
             return "ALL";
         }
@@ -191,7 +212,9 @@ public class ReportService {
     }
 
     private void write(Row row, int column, Object value) {
+
         Cell cell = row.createCell(column);
+
         if (value == null) {
             cell.setCellValue("");
         } else if (value instanceof Number number) {

@@ -25,6 +25,32 @@ const AVAILABLE_PERMISSIONS = [
 	'MESSAGE_VIEW', 'MESSAGE_SEND', 'REPORT_VIEW', 'REPORT_EXPORT'
 ];
 
+function displayLabel(value) {
+	return String(value || '')
+		.toLowerCase()
+		.replace(/(^|[_\s-])([a-z])/g, (_, separator, letter) =>
+			`${separator === '_' ? ' ' : separator}${letter.toUpperCase()}`
+		);
+}
+
+function applyProfessionalLabels() {
+	const workspaceLabel = document.querySelector('.auth-aside p');
+	const topbarLabel = document.querySelector('.topbar .eyebrow');
+	const liveLabel = document.querySelector('.live-pill');
+	const messagesBadge = document.querySelector('#section-messages .readonly-badge');
+
+	if (workspaceLabel) workspaceLabel.textContent = 'Campaign workspace';
+	if (topbarLabel) topbarLabel.textContent = 'Campaign control';
+	if (liveLabel) liveLabel.lastChild.textContent = ' Connected';
+	if (messagesBadge) messagesBadge.textContent = 'View only';
+
+	['#campaignStatus', '#messageStatus'].forEach(selector => {
+		document.querySelectorAll(`${selector} option`).forEach(option => {
+			option.textContent = option.value ? displayLabel(option.value) : 'All statuses';
+		});
+	});
+}
+
 function persistAuth(user) {
 	if (!user) {
 		localStorage.removeItem(STORAGE_KEYS.accessToken);
@@ -226,7 +252,7 @@ async function api(path, options = {}) {
 				const data = await response.json();
 				message = data.message || message;
 			} catch (_) {
-				// Invalid JSON error response
+				// Keep the default message when the error body cannot be read.
 			}
 		} else {
 			const text = await response.text();
@@ -290,10 +316,11 @@ function setSection(section) {
 }
 
 function statusBadge(status) {
+	const normalizedStatus = status || 'PENDING';
 
 	return `
-		<span class="status status-${status || 'PENDING'}">
-			${status || 'PENDING'}
+		<span class="status status-${normalizedStatus}">
+			${displayLabel(normalizedStatus)}
 		</span>
 	`;
 }
@@ -312,7 +339,7 @@ function openPermissionDialog(requestId) {
 	$('#permissionOptions').innerHTML = AVAILABLE_PERMISSIONS.map(permission => `
 		<label class="permission-option">
 			<input type="checkbox" value="${permission}">
-			<span>${permission.replaceAll('_', ' ')}</span>
+			<span>${displayLabel(permission)}</span>
 		</label>
 	`).join('');
 	dialog.classList.remove('hidden');
@@ -321,10 +348,6 @@ function openPermissionDialog(requestId) {
 function closePermissionDialog() {
 	$('#permissionDialog').classList.add('hidden');
 }
-
-// =========================================================
-// CONTACTS
-// =========================================================
 
 function renderContacts(items = state.contacts) {
 
@@ -380,10 +403,6 @@ function renderContacts(items = state.contacts) {
 				</tr>
 			`;
 }
-
-// =========================================================
-// TEMPLATES
-// =========================================================
 
 function renderTemplates(
 	items = state.templates
@@ -467,16 +486,12 @@ function renderTemplates(
 				.map(item => `
 					<option value="${item.templateId}">
 						${item.templateName}
-						(${item.status})
+						(${displayLabel(item.status)})
 					</option>
 				`)
 				.join('');
 	}
 }
-
-// =========================================================
-// CAMPAIGNS
-// =========================================================
 
 function renderCampaigns(
 	items = state.campaigns
@@ -492,10 +507,6 @@ function renderCampaigns(
 
 				let actions = '';
 
-				// -----------------------------------------
-				// DRAFT
-				// -----------------------------------------
-
 				if (item.status === 'DRAFT') {
 
 					actions += `
@@ -506,10 +517,6 @@ function renderCampaigns(
 						</button>
 					`;
 				}
-
-				// -----------------------------------------
-				// PENDING
-				// -----------------------------------------
 
 				if (item.status === 'PENDING') {
 
@@ -528,10 +535,6 @@ function renderCampaigns(
 					`;
 				}
 
-				// -----------------------------------------
-				// APPROVED
-				// -----------------------------------------
-
 				if (item.status === 'APPROVED') {
 
 					actions += `
@@ -541,10 +544,6 @@ function renderCampaigns(
 					`;
 				}
 
-				// -----------------------------------------
-				// REJECTED
-				// -----------------------------------------
-
 				if (item.status === 'REJECTED') {
 
 					actions += `
@@ -553,10 +552,6 @@ function renderCampaigns(
 						</span>
 					`;
 				}
-
-				// -----------------------------------------
-				// DELETE
-				// -----------------------------------------
 
 				if (item.status === 'DRAFT') {
 
@@ -619,10 +614,6 @@ function renderCampaigns(
 			`;
 }
 
-// =========================================================
-// MESSAGES
-// =========================================================
-
 function renderMessages(
 	items = state.messages
 ) {
@@ -675,10 +666,6 @@ function renderMessages(
 			`;
 }
 
-// =========================================================
-// ACCOUNT REQUESTS
-// =========================================================
-
 function renderRequests(
 	items = state.requests
 ) {
@@ -709,10 +696,6 @@ function renderRequests(
 				</tr>
 			`;
 }
-
-// =========================================================
-// LOAD RESOURCE
-// =========================================================
 
 async function loadResource(resource) {
 
@@ -764,10 +747,6 @@ async function loadResource(resource) {
 		);
 	}
 }
-
-// =========================================================
-// LOAD EVERYTHING
-// =========================================================
 
 async function loadAll() {
 	if (loadingAll) {
@@ -895,7 +874,7 @@ function renderReports() {
 		chart.innerHTML = rows.length
 			? rows.map(row => `
 				<div class="chart-row">
-					<div class="chart-label"><span>${row.label}</span><strong>${row.value}</strong></div>
+					<div class="chart-label"><span>${displayLabel(row.label)}</span><strong>${row.value}</strong></div>
 					<div class="chart-track"><span class="chart-bar ${row.className || ''}" style="width:${maximum ? Math.max((row.value / maximum) * 100, row.value ? 4 : 0) : 0}%"></span></div>
 				</div>
 			`).join('')
@@ -957,7 +936,7 @@ function renderReports() {
 				const campaignRate = campaignMessages.length
 					? Math.round((campaignDelivered / campaignMessages.length) * 100)
 					: 0;
-				return `<tr><td><strong>${campaign.campaignName}</strong><small class="muted">${campaign.status}</small></td><td>${campaignMessages.length}</td><td>${campaignDelivered}</td><td>${campaignRate}%</td></tr>`;
+				return `<tr><td><strong>${campaign.campaignName}</strong><small class="muted">${displayLabel(campaign.status)}</small></td><td>${campaignMessages.length}</td><td>${campaignDelivered}</td><td>${campaignRate}%</td></tr>`;
 			}).join('')
 			: '<tr><td colspan="4" class="empty-state">No campaign data yet.</td></tr>';
 	}
@@ -1114,10 +1093,6 @@ async function loadLists() {
 	}
 }
 
-// =========================================================
-// LOGIN
-// =========================================================
-
 async function login(event) {
 
 	event.preventDefault();
@@ -1183,10 +1158,6 @@ async function restoreSession() {
 	}
 }
 
-// =========================================================
-// SIGNUP
-// =========================================================
-
 async function signup(event) {
 
 	event.preventDefault();
@@ -1244,10 +1215,6 @@ async function signup(event) {
 		);
 	}
 }
-
-// =========================================================
-// GENERIC RESOURCE FORM
-// =========================================================
 
 async function submitResource(event) {
 
@@ -1327,10 +1294,6 @@ async function submitResource(event) {
 	}
 }
 
-// =========================================================
-// UPLOAD CONTACTS
-// =========================================================
-
 async function uploadContacts(event) {
 
 	event.preventDefault();
@@ -1389,10 +1352,6 @@ async function uploadContacts(event) {
 		);
 	}
 }
-
-// =========================================================
-// UPLOAD CAMPAIGN CONTACTS
-// =========================================================
 
 async function uploadCampaignContacts(event) {
 
@@ -1460,17 +1419,9 @@ async function uploadCampaignContacts(event) {
 	}
 }
 
-// =========================================================
-// CLICK HANDLERS
-// =========================================================
-
 document.addEventListener(
 	'click',
 	async (event) => {
-
-		// ---------------------------------------------
-		// AUTH VIEW
-		// ---------------------------------------------
 
 		const authView =
 			event.target.closest(
@@ -1494,10 +1445,6 @@ document.addEventListener(
 				);
 		}
 
-		// ---------------------------------------------
-		// NAVIGATION
-		// ---------------------------------------------
-
 		const nav =
 			event.target.closest(
 				'[data-section], [data-section-jump]'
@@ -1511,10 +1458,6 @@ document.addEventListener(
 			);
 		}
 
-		// ---------------------------------------------
-		// OPEN FORM
-		// ---------------------------------------------
-
 		const open =
 			event.target.closest(
 				'[data-open-form]'
@@ -1526,10 +1469,6 @@ document.addEventListener(
 				.classList
 				.toggle('hidden');
 		}
-
-		// ---------------------------------------------
-		// DELETE
-		// ---------------------------------------------
 
 		const deleteButton =
 			event.target.closest(
@@ -1565,10 +1504,6 @@ document.addEventListener(
 			}
 		}
 
-		// ---------------------------------------------
-		// APPROVE TEMPLATE
-		// ---------------------------------------------
-
 		const approveTemplate =
 			event.target.closest(
 				'[data-approve]'
@@ -1602,10 +1537,6 @@ document.addEventListener(
 			}
 		}
 
-		// ---------------------------------------------
-		// SUBMIT CAMPAIGN
-		// ---------------------------------------------
-
 		const submit =
 			event.target.closest(
 				'[data-submit]'
@@ -1638,10 +1569,6 @@ document.addEventListener(
 				);
 			}
 		}
-
-		// ---------------------------------------------
-		// APPROVE CAMPAIGN
-		// ---------------------------------------------
 
 		const approveCampaign =
 			event.target.closest(
@@ -1691,10 +1618,6 @@ document.addEventListener(
 				);
 			}
 		}
-
-		// ---------------------------------------------
-		// REJECT CAMPAIGN
-		// ---------------------------------------------
 
 		const rejectCampaign =
 			event.target.closest(
@@ -1778,10 +1701,6 @@ document.addEventListener(
 		}
 	}
 );
-
-// =========================================================
-// INITIAL EVENT LISTENERS
-// =========================================================
 
 $('#loginForm')
 	.addEventListener(
@@ -1875,6 +1794,7 @@ $('#confirmPermissionDialog')
 		}
 	);
 
+applyProfessionalLabels();
 restoreSession();
 
 $('#refreshButton')

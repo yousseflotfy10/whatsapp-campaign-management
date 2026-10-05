@@ -5,25 +5,22 @@ import com.wcm.campaign.dto.SignupRequest;
 import com.wcm.campaign.dto.UserResponse;
 import com.wcm.campaign.model.User;
 import com.wcm.campaign.repository.UserRepository;
-import com.wcm.campaign.service.AccountRequestService;
 import com.wcm.campaign.service.UserService;
-
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
-
 import org.springframework.web.bind.annotation.*;
-
+import com.wcm.campaign.model.Role;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -31,40 +28,61 @@ import java.util.UUID;
 @RequestMapping("/api/auth")
 public class AuthController {
 
+    private static final Logger logger = LoggerFactory.getLogger(AuthController.class);
+
     private final UserService userService;
-    private final AccountRequestService accountRequestService;
     private final AuthenticationManager authenticationManager;
     private final UserRepository userRepository;
 
     public AuthController(
             UserService userService,
-            AccountRequestService accountRequestService,
             AuthenticationManager authenticationManager,
             UserRepository userRepository
     ) {
         this.userService = userService;
-        this.accountRequestService = accountRequestService;
         this.authenticationManager = authenticationManager;
         this.userRepository = userRepository;
     }
 
     @PostMapping("/signup")
     public ResponseEntity<String> signup(@Valid @RequestBody SignupRequest request) {
-        accountRequestService.submitRequest(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body("Account request submitted successfully. " + "Please wait for administrator approval.");
+
+        logger.info("Signup request received for username={}", request.getUsername());
+
+        userService.createPendingUser(
+                request.getUsername(),
+                request.getEmail(),
+                request.getPassword(),
+                Role.EMPLOYEE
+        );
+
+        logger.info("Signup completed successfully for username={}", request.getUsername());
+
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body("Your account was created. An administrator will review and activate it.");
     }
 
     @PostMapping("/signin")
-    public ResponseEntity<UserResponse> signin(@Valid @RequestBody LoginRequest request, HttpSession session, HttpServletRequest httpRequest, HttpServletResponse response) {
-        Authentication authentication = authenticationManager.authenticate(new UsernamePasswordAuthenticationToken(request.getUsernameOrEmail(), request.getPassword()));
+    public ResponseEntity<UserResponse> signin(
+            @Valid @RequestBody LoginRequest request,
+            HttpSession session,
+            HttpServletRequest httpRequest,
+            HttpServletResponse response
+    ) {
+
+        logger.info("Signin attempt for username or email={}", request.getUsernameOrEmail());
+
+        Authentication authentication = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(request.getUsernameOrEmail(), request.getPassword()));
 
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         new HttpSessionSecurityContextRepository().saveContext(
-                        SecurityContextHolder.getContext(),
-                        httpRequest,
-                        response
-                );
+                SecurityContextHolder.getContext(),
+                httpRequest,
+                response
+        );
 
         String username = authentication.getName();
         User user = userService.getUserByUsername(username);
@@ -85,33 +103,48 @@ public class AuthController {
         payload.setAccessToken(accessToken);
         payload.setRefreshToken(refreshToken);
 
+        logger.info("Signin successful for username={}", username);
+
         return ResponseEntity.ok(payload);
     }
 
     @GetMapping("/me")
     public ResponseEntity<UserResponse> me(HttpServletRequest request) {
+
+        logger.info("Fetching current authenticated user");
+
         User user = resolveUser(request);
 
         if (user == null) {
+            logger.warn("Current user could not be resolved");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
         UserResponse response = UserResponse.fromUser(user);
         response.setAccessToken(user.getAccessToken());
         response.setRefreshToken(user.getRefreshToken());
+
+        logger.info("Current user resolved successfully with id={}", user.getUserId());
+
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/refresh")
     public ResponseEntity<UserResponse> refresh(@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        logger.info("Access token refresh requested");
+
         if (authorization == null || !authorization.startsWith("Bearer ")) {
+            logger.warn("Access token refresh rejected because authorization header is missing or invalid");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
         String refreshToken = authorization.substring(7).trim();
         User user = userRepository.findByRefreshToken(refreshToken).orElse(null);
 
-        if (user == null || user.getRefreshTokenExpiresAt() == null || user.getRefreshTokenExpiresAt().isBefore(LocalDateTime.now())) {
+        if (user == null || user.getRefreshTokenExpiresAt() == null
+                || user.getRefreshTokenExpiresAt().isBefore(LocalDateTime.now())) {
+            logger.warn("Access token refresh rejected because refresh token is invalid or expired");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
@@ -122,16 +155,22 @@ public class AuthController {
         UserResponse response = UserResponse.fromUser(user);
         response.setAccessToken(accessToken);
         response.setRefreshToken(user.getRefreshToken());
+
+        logger.info("Access token refreshed successfully for user id={}", user.getUserId());
+
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/logout")
     public ResponseEntity<String> logout(HttpSession session, HttpServletRequest request) {
 
+        logger.info("Logout requested");
+
         session.invalidate();
         SecurityContextHolder.clearContext();
 
         String authHeader = request.getHeader("Authorization");
+
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String accessToken = authHeader.substring(7).trim();
             userRepository.findByAccessToken(accessToken)
@@ -140,20 +179,26 @@ public class AuthController {
                         user.setRefreshToken(null);
                         user.setRefreshTokenExpiresAt(null);
                         userRepository.save(user);
+                        logger.info("Authentication tokens cleared for user id={}", user.getUserId());
                     });
         }
 
-        return ResponseEntity.ok("Logged out successfully");
+        logger.info("Logout completed successfully");
+
+        return ResponseEntity.ok("You have been signed out.");
     }
 
     private User resolveUser(HttpServletRequest request) {
+
         String authorization = request.getHeader("Authorization");
+
         if (authorization != null && authorization.startsWith("Bearer ")) {
             String accessToken = authorization.substring(7).trim();
             return userRepository.findByAccessToken(accessToken).orElse(null);
         }
 
         HttpSession session = request.getSession(false);
+
         if (session != null) {
             Object userId = session.getAttribute("USER_ID");
             if (userId != null) {
@@ -162,6 +207,7 @@ public class AuthController {
         }
 
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
         if (authentication != null && authentication.isAuthenticated() && authentication.getName() != null) {
             return userRepository.findByUsername(authentication.getName()).orElse(null);
         }

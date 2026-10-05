@@ -13,10 +13,6 @@ public class ContactRequest {
 
     private String listId;
 
-    private String listName;
-
-    private String listHash;
-
     public ContactRequest() {
     }
 
@@ -42,21 +38,5 @@ public class ContactRequest {
 
     public void setListId(String listId) {
         this.listId = listId;
-    }
-
-    public String getListName() {
-        return listName;
-    }
-
-    public void setListName(String listName) {
-        this.listName = listName;
-    }
-
-    public String getListHash() {
-        return listHash;
-    }
-
-    public void setListHash(String listHash) {
-        this.listHash = listHash;
     }
 }

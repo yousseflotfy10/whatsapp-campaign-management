@@ -4,7 +4,7 @@ import com.wcm.campaign.model.Role;
 import com.wcm.campaign.model.User;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
-
+import com.wcm.campaign.model.User.AccountStatus;
 import java.util.List;
 import java.util.Optional;
 
@@ -35,5 +35,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByEmail(String email);
 
     boolean existsByRole(Role role);
+
+    List<User> findByStatus(AccountStatus status);
 
 }
