@@ -13,6 +13,7 @@ public class MessageResponse {
     private String messageContent;
     private String status;
     private LocalDateTime sentAt;
+    private String failureReason;
 
     public MessageResponse() {
     }
@@ -32,6 +33,7 @@ public class MessageResponse {
         this.messageContent = message.getMessageContent();
         this.status = message.getStatus();
         this.sentAt = message.getSentAt();
+        this.failureReason = message.getFailureReason();
     }
 
     public Long getMessageId() {
@@ -88,5 +90,13 @@ public class MessageResponse {
 
     public void setSentAt(LocalDateTime sentAt) {
         this.sentAt = sentAt;
+    }
+
+    public String getFailureReason() {
+        return failureReason;
+    }
+
+    public void setFailureReason(String failureReason) {
+        this.failureReason = failureReason;
     }
 }

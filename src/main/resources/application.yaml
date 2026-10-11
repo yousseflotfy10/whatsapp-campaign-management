@@ -1,0 +1,8 @@
+whatsapp:
+  provider: ${WHATSAPP_PROVIDER:http}
+  enabled: ${WHATSAPP_ENABLED:true}
+  base-url: ${WHATSAPP_BASE_URL:http://116.203.232.197:5920}
+  waba-id: ${WHATSAPP_WABA_ID:100000000009}
+  phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID:200000000009}
+  access-token: sim_tok_be26e310aade43f3847048700e787970
+  webhook-secret: ${WHATSAPP_WEBHOOK_SECRET:simulator-secret}

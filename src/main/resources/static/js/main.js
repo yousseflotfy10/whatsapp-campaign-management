@@ -8,13 +8,40 @@ const state = {
 	lists: []
 };
 
+const PAGE_SIZES = {
+	contacts: 10,
+	templates: 10,
+	campaigns: 10,
+	messages: 10,
+	requests: 10,
+	reportCampaigns: 10
+};
+
+const paginationState = {
+	contacts: 1,
+	templates: 1,
+	campaigns: 1,
+	messages: 1,
+	requests: 1,
+	reportCampaigns: 1
+};
+
+const filterState = {
+	contacts: '',
+	templates: '',
+	campaigns: '',
+	campaignStatus: '',
+	messages: ''
+};
+
 let realtimeAbortController = null;
 let realtimeReconnectTimer = null;
 let loadingAll = false;
 
 const STORAGE_KEYS = {
 	accessToken: 'wcm_access_token',
-	refreshToken: 'wcm_refresh_token'
+	refreshToken: 'wcm_refresh_token',
+	activeSection: 'wcm_active_section'
 };
 
 const AVAILABLE_PERMISSIONS = [
@@ -121,7 +148,7 @@ function applyAccessControl(user) {
 	const controls = [
 		['#section-contacts [data-open-form]', 'CONTACT_CREATE'],
 		['#section-templates [data-open-form]', 'TEMPLATE_CREATE'],
-		['#section-templates [data-approve]', 'TEMPLATE_APPROVE'],
+		['#section-templates [data-submit-template]', 'TEMPLATE_UPDATE'],
 		['#section-templates [data-delete]', 'TEMPLATE_UPDATE'],
 		['#section-campaigns [data-open-form]', 'CAMPAIGN_CREATE'],
 		['#section-campaigns [data-submit]', 'CAMPAIGN_SUBMIT'],
@@ -268,6 +295,13 @@ async function api(path, options = {}) {
 }
 
 function setSection(section) {
+	const sectionElement = $(`#section-${section}`);
+
+	if (!sectionElement) {
+		return;
+	}
+
+	localStorage.setItem(STORAGE_KEYS.activeSection, section);
 
 	$$('.nav-item')
 		.forEach(item =>
@@ -289,15 +323,18 @@ function setSection(section) {
 		section[0].toUpperCase() +
 		section.slice(1);
 
-	if (
-		!hasPermission({
+	const requiredPermission = {
 			contacts: 'CONTACT_VIEW',
 			templates: 'TEMPLATE_VIEW',
 			campaigns: 'CAMPAIGN_VIEW',
 			messages: 'MESSAGE_VIEW',
 			requests: 'USER_VIEW',
 			reports: 'REPORT_VIEW'
-		}[section])
+		}[section];
+
+	if (
+		requiredPermission &&
+		!hasPermission(requiredPermission)
 	) {
 		setSection('overview');
 		return;
@@ -349,84 +386,411 @@ function closePermissionDialog() {
 	$('#permissionDialog').classList.add('hidden');
 }
 
-function renderContacts(items = state.contacts) {
+function resetPage(section) {
+	paginationState[section] = 1;
+}
 
-	$('#contactCount').textContent =
-		`${items.length} record${items.length === 1 ? '' : 's'}`;
+function clampPage(section, totalItems, pageSize) {
+	const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+	const currentPage = Math.min(
+		Math.max(paginationState[section] || 1, 1),
+		totalPages
+	);
 
-	$('#contactsTable').innerHTML =
-		items.length
+	paginationState[section] = currentPage;
 
-			? items.map(item => `
-				<tr>
-					<td>
-						<strong>
-							${item.contactName || 'Unnamed contact'}
-						</strong>
-					</td>
+	return {
+		currentPage,
+		totalPages
+	};
+}
 
-					<td>
-						${item.contactNumbers || '—'}
-					</td>
+function paginateItems(section, items, pageSize) {
+	const { currentPage, totalPages } =
+		clampPage(section, items.length, pageSize);
+	const start = (currentPage - 1) * pageSize;
+	const visibleItems = items.slice(start, start + pageSize);
 
-					<td>
-						<strong>${item.listName || item.listId || '—'}</strong>
-						<small class="muted">${item.listId || ''}</small>
-					</td>
+	return {
+		visibleItems,
+		currentPage,
+		totalPages,
+		totalItems: items.length,
+		start,
+		end: Math.min(start + pageSize, items.length)
+	};
+}
 
-					<td>
-						${statusBadge(
-							item.active
-								? 'ACTIVE'
-								: 'INACTIVE'
-						)}
-					</td>
+function renderPagination(section, totalItems, currentPage, totalPages, start, end) {
+	const container = $(`#${section}Pagination`);
 
-					<td>
-						<button
-							class="table-action"
-							data-delete="contacts"
-							data-id="${item.contactId}">
-							Delete
-						</button>
-					</td>
-				</tr>
-			`).join('')
+	if (!container) {
+		return;
+	}
 
+	if (totalItems <= PAGE_SIZES[section]) {
+		container.innerHTML = '';
+		return;
+	}
+
+	container.innerHTML = `
+		<div class="pagination-summary">
+			Showing ${start + 1}-${end} of ${totalItems}
+		</div>
+		<div class="pagination-actions">
+			<button
+				class="table-action pagination-button"
+				data-page-section="${section}"
+				data-page-action="prev"
+				${currentPage === 1 ? 'disabled' : ''}>
+				Previous
+			</button>
+			<span class="pagination-page">
+				Page ${currentPage} of ${totalPages}
+			</span>
+			<button
+				class="table-action pagination-button"
+				data-page-section="${section}"
+				data-page-action="next"
+				${currentPage === totalPages ? 'disabled' : ''}>
+				Next
+			</button>
+		</div>
+	`;
+}
+
+function renderPaginatedRows({
+	section,
+	items,
+	pageSize,
+	tableSelector,
+	countSelector,
+	emptyMessage,
+	colspan,
+	rowRenderer
+}) {
+	const { visibleItems, currentPage, totalPages, totalItems, start, end } =
+		paginateItems(section, items, pageSize);
+
+	const countLabel =
+		`${totalItems} record${totalItems === 1 ? '' : 's'}`;
+
+	if (countSelector) {
+		$(countSelector).textContent =
+			totalItems
+				? `${countLabel} • Page ${currentPage} of ${totalPages}`
+				: countLabel;
+	}
+
+	$(tableSelector).innerHTML =
+		visibleItems.length
+			? visibleItems.map(rowRenderer).join('')
 			: `
 				<tr>
 					<td
-						colspan="5"
+						colspan="${colspan}"
 						class="empty-state">
-						No contacts found.
+						${emptyMessage}
 					</td>
 				</tr>
 			`;
+
+	renderPagination(section, totalItems, currentPage, totalPages, start, end);
+}
+
+function getFilteredContacts() {
+	const search = filterState.contacts.trim().toLowerCase();
+
+	return state.contacts.filter(item =>
+		!search ||
+		(item.contactName || '').toLowerCase().includes(search)
+	);
+}
+
+function getFilteredTemplates() {
+	const search = filterState.templates.trim().toLowerCase();
+
+	return state.templates.filter(item =>
+		!search ||
+		(item.templateName || '').toLowerCase().includes(search)
+	);
+}
+
+function getFilteredCampaigns() {
+	const search = filterState.campaigns.trim().toLowerCase();
+	const status = filterState.campaignStatus;
+
+	return state.campaigns.filter(item =>
+		(!search || (item.campaignName || '').toLowerCase().includes(search)) &&
+		(!status || item.status === status)
+	);
+}
+
+function getFilteredMessages() {
+	const status = filterState.messages;
+
+	return state.messages.filter(item =>
+		!status || item.status === status
+	);
+}
+
+function listNamesForIds(listIds) {
+	if (!listIds) {
+		return '—';
+	}
+
+	const namesById = new Map(
+		(state.lists || []).map(list => [
+			String(list.listId),
+			list.listName || list.listId
+		])
+	);
+
+	return String(listIds)
+		.split(',')
+		.map(id => id.trim())
+		.filter(Boolean)
+		.map(id => namesById.get(id) || id)
+		.join(', ') || '—';
+}
+
+function renderContacts(items = getFilteredContacts()) {
+	renderPaginatedRows({
+		section: 'contacts',
+		items,
+		pageSize: PAGE_SIZES.contacts,
+		tableSelector: '#contactsTable',
+		countSelector: '#contactCount',
+		emptyMessage: 'No contacts found.',
+		colspan: 5,
+		rowRenderer: item => `
+			<tr>
+				<td>
+					<strong>
+						${item.contactName || 'Unnamed contact'}
+					</strong>
+				</td>
+
+				<td>
+					${item.contactNumbers || '—'}
+				</td>
+
+				<td>
+					<strong>${item.listName || item.listId || '—'}</strong>
+					<small class="muted">${item.listId || ''}</small>
+				</td>
+
+				<td>
+					${statusBadge(
+						item.active
+							? 'ACTIVE'
+							: 'INACTIVE'
+					)}
+				</td>
+
+				<td>
+					<button
+						class="table-action"
+						data-delete="contacts"
+						data-id="${item.contactId}">
+						Delete
+					</button>
+				</td>
+			</tr>
+		`
+	});
 }
 
 function renderTemplates(
-	items = state.templates
+	items = getFilteredTemplates()
 ) {
+	renderPaginatedRows({
+		section: 'templates',
+		items,
+		pageSize: PAGE_SIZES.templates,
+		tableSelector: '#templatesTable',
+		countSelector: '#templateCount',
+		emptyMessage: 'No templates found.',
+		colspan: 4,
+		rowRenderer: item => `
+			<tr>
 
-	$('#templateCount').textContent =
-		`${items.length} record${items.length === 1 ? '' : 's'}`;
+				<td>
+					<strong>
+						${item.templateName}
+					</strong>
+				</td>
 
-	$('#templatesTable').innerHTML =
-		items.length
+				<td
+					class="truncate"
+					title="${item.templateContent}">
+					${item.templateContent}
+				</td>
 
-			? items.map(item => `
+				<td>
+					${statusBadge(item.status)}
+					${
+						item.failureReason
+							? `<small class="muted">${item.failureReason}</small>`
+							: ''
+					}
+				</td>
+
+				<td>
+
+					${
+						item.status === 'DRAFT'
+							? `
+								<button
+									class="table-action"
+									data-submit-template="${item.templateId}">
+									Submit
+								</button>
+							`
+							: item.status === 'PENDING'
+							? '<span class="muted">Waiting for simulator approval</span>'
+							: '—'
+					}
+
+					<button
+						class="table-action"
+						data-delete="templates"
+						data-id="${item.templateId}">
+						Delete
+					</button>
+
+				</td>
+
+			</tr>
+		`
+	});
+
+	updateCampaignTemplateSelect();
+}
+
+function updateCampaignTemplateSelect() {
+	const templateSelect = $('#campaignTemplateSelect');
+
+	if (!templateSelect) {
+		return;
+	}
+
+	const approvedTemplates = state.templates.filter(
+		item => item.status === 'APPROVED'
+	);
+
+	templateSelect.innerHTML =
+		'<option value="">Select an approved template</option>' +
+		approvedTemplates
+			.map(item => `
+				<option value="${item.templateId}">
+					${item.templateName}
+				</option>
+			`)
+			.join('');
+
+	templateSelect.disabled = approvedTemplates.length === 0;
+
+	let hint = $('#campaignTemplateHint');
+
+	if (!hint) {
+		hint = document.createElement('small');
+		hint.id = 'campaignTemplateHint';
+		hint.className = 'form-note';
+		templateSelect.insertAdjacentElement('afterend', hint);
+	}
+
+	hint.textContent = approvedTemplates.length === 0
+		? 'Submit a template and wait for approval before creating a campaign.'
+		: `${approvedTemplates.length} approved template${approvedTemplates.length === 1 ? '' : 's'} available.`;
+}
+
+function renderCampaigns(
+	items = getFilteredCampaigns()
+) {
+	renderPaginatedRows({
+		section: 'campaigns',
+		items,
+		pageSize: PAGE_SIZES.campaigns,
+		tableSelector: '#campaignsTable',
+		countSelector: '#campaignCount',
+		emptyMessage: 'No campaigns found.',
+		colspan: 6,
+		rowRenderer: item => {
+			let actions = '';
+
+			if (item.status === 'DRAFT') {
+				actions += `
+					<button
+						class="table-action"
+						data-submit="${item.campaignId}">
+						Submit
+					</button>
+				`;
+			}
+
+			if (item.status === 'PENDING') {
+				actions += `
+					<button
+						class="table-action"
+						data-approve-campaign="${item.campaignId}">
+						Approve
+					</button>
+
+					<button
+						class="table-action"
+						data-reject-campaign="${item.campaignId}">
+						Reject
+					</button>
+				`;
+			}
+
+			if (item.status === 'APPROVED') {
+				actions += `
+					<span class="muted">
+						Approved
+					</span>
+				`;
+			}
+
+			if (item.status === 'REJECTED') {
+				actions += `
+					<span class="muted">
+						Rejected
+					</span>
+				`;
+			}
+
+			if (item.status === 'DRAFT') {
+				actions += `
+					<button
+						class="table-action"
+						data-delete="campaigns"
+						data-id="${item.campaignId}">
+						Delete
+					</button>
+				`;
+			}
+
+			return `
 				<tr>
 
 					<td>
 						<strong>
-							${item.templateName}
+							${item.campaignName}
 						</strong>
+
+						<small class="muted">
+							${item.senderName || 'No sender'}
+						</small>
 					</td>
 
-					<td
-						class="truncate"
-						title="${item.templateContent}">
-						${item.templateContent}
+					<td>
+						${listNamesForIds(item.listId)}
+					</td>
+
+					<td>
+						#${item.templateId || '—'}
 					</td>
 
 					<td>
@@ -434,274 +798,95 @@ function renderTemplates(
 					</td>
 
 					<td>
-
-						${
-							item.status === 'PENDING'
-								? `
-									<button
-										class="table-action"
-										data-approve="${item.templateId}">
-										Approve
-									</button>
-								`
-								: '—'
-						}
-
-						<button
-							class="table-action"
-							data-delete="templates"
-							data-id="${item.templateId}">
-							Delete
-						</button>
-
+						${dateValue(item.createdAt)}
 					</td>
 
-				</tr>
-			`).join('')
-
-			: `
-				<tr>
-					<td
-						colspan="4"
-						class="empty-state">
-						No templates found.
+					<td>
+						${actions}
 					</td>
+
 				</tr>
 			`;
-
-	const templateSelect =
-		$('#campaignTemplateSelect');
-
-	if (templateSelect) {
-
-		templateSelect.innerHTML =
-			'<option value="">Select template name</option>' +
-
-			state.templates
-				.filter(
-					item =>
-						item.status === 'APPROVED' ||
-						item.status === 'DRAFT'
-				)
-				.map(item => `
-					<option value="${item.templateId}">
-						${item.templateName}
-						(${displayLabel(item.status)})
-					</option>
-				`)
-				.join('');
-	}
-}
-
-function renderCampaigns(
-	items = state.campaigns
-) {
-
-	$('#campaignCount').textContent =
-		`${items.length} record${items.length === 1 ? '' : 's'}`;
-
-	$('#campaignsTable').innerHTML =
-		items.length
-
-			? items.map(item => {
-
-				let actions = '';
-
-				if (item.status === 'DRAFT') {
-
-					actions += `
-						<button
-							class="table-action"
-							data-submit="${item.campaignId}">
-							Submit
-						</button>
-					`;
-				}
-
-				if (item.status === 'PENDING') {
-
-					actions += `
-						<button
-							class="table-action"
-							data-approve-campaign="${item.campaignId}">
-							Approve
-						</button>
-
-						<button
-							class="table-action"
-							data-reject-campaign="${item.campaignId}">
-							Reject
-						</button>
-					`;
-				}
-
-				if (item.status === 'APPROVED') {
-
-					actions += `
-						<span class="muted">
-							Approved
-						</span>
-					`;
-				}
-
-				if (item.status === 'REJECTED') {
-
-					actions += `
-						<span class="muted">
-							Rejected
-						</span>
-					`;
-				}
-
-				if (item.status === 'DRAFT') {
-
-					actions += `
-						<button
-							class="table-action"
-							data-delete="campaigns"
-							data-id="${item.campaignId}">
-							Delete
-						</button>
-					`;
-				}
-
-				return `
-					<tr>
-
-						<td>
-							<strong>
-								${item.campaignName}
-							</strong>
-
-							<small class="muted">
-								${item.senderName || 'No sender'}
-							</small>
-						</td>
-
-						<td>
-							${item.listId || '—'}
-						</td>
-
-						<td>
-							#${item.templateId || '—'}
-						</td>
-
-						<td>
-							${statusBadge(item.status)}
-						</td>
-
-						<td>
-							${dateValue(item.createdAt)}
-						</td>
-
-						<td>
-							${actions}
-						</td>
-
-					</tr>
-				`;
-
-			}).join('')
-
-			: `
-				<tr>
-					<td
-						colspan="6"
-						class="empty-state">
-						No campaigns found.
-					</td>
-				</tr>
-			`;
+		}
+	});
 }
 
 function renderMessages(
-	items = state.messages
+	items = getFilteredMessages()
 ) {
+	renderPaginatedRows({
+		section: 'messages',
+		items,
+		pageSize: PAGE_SIZES.messages,
+		tableSelector: '#messagesTable',
+		countSelector: '#messageCount',
+		emptyMessage: 'No messages found.',
+		colspan: 6,
+		rowRenderer: item => `
+			<tr>
 
-	$('#messageCount').textContent =
-		`${items.length} record${items.length === 1 ? '' : 's'}`;
+				<td>
+					#${item.messageId}
+				</td>
 
-	$('#messagesTable').innerHTML =
-		items.length
+				<td>
+					#${item.campaignId || '—'}
+				</td>
 
-			? items.map(item => `
-				<tr>
+				<td>
+					#${item.contactId || '—'}
+				</td>
 
-					<td>
-						#${item.messageId}
-					</td>
+				<td
+					class="truncate">
+					${item.messageContent || '—'}
+				</td>
 
-					<td>
-						#${item.campaignId || '—'}
-					</td>
+				<td>
+					${statusBadge(item.status)}
+				</td>
 
-					<td>
-						#${item.contactId || '—'}
-					</td>
+				<td>
+					${dateValue(item.sentAt)}
+				</td>
 
-					<td
-						class="truncate">
-						${item.messageContent || '—'}
-					</td>
-
-					<td>
-						${statusBadge(item.status)}
-					</td>
-
-					<td>
-						${dateValue(item.sentAt)}
-					</td>
-
-				</tr>
-			`).join('')
-
-			: `
-				<tr>
-					<td
-						colspan="6"
-						class="empty-state">
-						No messages found.
-					</td>
-				</tr>
-			`;
+			</tr>
+		`
+	});
 }
 
 function renderRequests(
 	items = state.requests
 ) {
-
-	$('#requestCount').textContent =
-		`${items.length} request${items.length === 1 ? '' : 's'}`;
-
-	$('#requestsTable').innerHTML =
-		items.length
-
-			? items.map(item => `
-				<tr>
-					<td>#${item.requestId}</td>
-					<td>${item.username || '—'}</td>
-					<td>${item.email || '—'}</td>
-					<td>${statusBadge(item.status)}</td>
-					<td>${dateValue(item.requestedAt)}</td>
-					<td>
-						<button class="table-action" data-request-approve="${item.requestId}">Approve</button>
-						<button class="table-action" data-request-reject="${item.requestId}">Reject</button>
-					</td>
-				</tr>
-			`).join('')
-
-			: `
-				<tr>
-					<td colspan="6" class="empty-state">No pending requests.</td>
-				</tr>
-			`;
+	renderPaginatedRows({
+		section: 'requests',
+		items,
+		pageSize: PAGE_SIZES.requests,
+		tableSelector: '#requestsTable',
+		countSelector: '#requestCount',
+		emptyMessage: 'No pending requests.',
+		colspan: 6,
+		rowRenderer: item => `
+			<tr>
+				<td>#${item.userId}</td>
+				<td>${item.username || '—'}</td>
+				<td>${item.email || '—'}</td>
+				<td>${statusBadge(item.status)}</td>
+				<td>${dateValue(item.createdAt)}</td>
+				<td>
+					<button class="table-action" data-request-approve="${item.userId}">Approve</button>
+					<button class="table-action" data-request-reject="${item.userId}">Reject</button>
+				</td>
+			</tr>
+		`
+	});
 }
 
 async function loadResource(resource) {
 
 	try {
 		const endpoint = resource === 'requests'
-			? '/account-requests'
+			? '/users/pending'
 			: `/${resource}`;
 
 		state[resource] =
@@ -775,6 +960,7 @@ async function loadAll() {
 	);
 
 	renderReports();
+	renderDashboardInsights();
 	} finally {
 		loadingAll = false;
 	}
@@ -783,16 +969,20 @@ async function loadAll() {
 function renderReports() {
 	const messages = state.messages || [];
 	const campaigns = state.campaigns || [];
-	const contacts = state.contacts || [];
-	const statuses = ['PENDING', 'SENT', 'DELIVERED', 'FAILED'];
 	const reportSection = $('#section-reports');
 
 	if (reportSection && !$('#reportExportRange')) {
 		const heading = reportSection.querySelector('.section-heading');
+		heading.querySelector('h3').textContent = 'Export reports';
+		heading.querySelector('p:not(.eyebrow)').textContent =
+			'Choose the campaigns to include, review the export preview, then download the Excel report.';
+		heading.querySelector('.readonly-badge').textContent = 'Export only';
+		reportSection.querySelector('.report-metrics')?.remove();
+		reportSection.querySelector('.split-grid')?.remove();
 		const actions = document.createElement('div');
 		actions.className = 'report-actions';
 		actions.innerHTML = `
-			<label>Export range
+			<label>Preview and export
 				<select id="reportExportRange">
 					<option value="LAST">Last campaign</option>
 					<option value="LAST_10">Last 10 campaigns</option>
@@ -803,7 +993,116 @@ function renderReports() {
 		`;
 		heading.append(actions);
 		$('#exportReportButton').addEventListener('click', exportReport);
+
+		const preview = document.createElement('div');
+		preview.id = 'reportExportPreview';
+		preview.className = 'report-export-preview';
+		reportSection.append(preview);
+		$('#reportExportRange').addEventListener('change', renderExportPreview);
 	}
+
+	renderExportPreview();
+	return;
+}
+
+function getExportCampaigns() {
+	const range = $('#reportExportRange')?.value || 'ALL';
+	const campaigns = [...(state.campaigns || [])]
+		.sort((left, right) =>
+			new Date(right.createdAt || 0) - new Date(left.createdAt || 0)
+		);
+
+	return range === 'LAST'
+		? campaigns.slice(0, 1)
+		: range === 'LAST_10'
+			? campaigns.slice(0, 10)
+			: campaigns;
+}
+
+function renderExportPreview() {
+	const preview = $('#reportExportPreview');
+
+	if (!preview) {
+		return;
+	}
+
+	const campaigns = getExportCampaigns();
+	const messages = state.messages || [];
+	const rows = campaigns.map(campaign => {
+		const campaignMessages = messages.filter(message =>
+			message.campaignId === campaign.campaignId
+		);
+		const delivered = campaignMessages.filter(message =>
+			message.status === 'DELIVERED'
+		).length;
+		const sent = campaignMessages.filter(message =>
+			message.status === 'SENT'
+		).length;
+		const failed = campaignMessages.filter(message =>
+			message.status === 'FAILED'
+		).length;
+
+		return {
+			campaign,
+			total: campaignMessages.length,
+			delivered,
+			sent,
+			failed,
+			rate: campaignMessages.length
+				? Math.round(delivered * 100 / campaignMessages.length)
+				: 0
+		};
+	});
+
+	preview.innerHTML = `
+		<div class="panel-heading">
+			<div>
+				<p class="eyebrow">Export preview</p>
+				<h3>${rows.length} campaign${rows.length === 1 ? '' : 's'} will be exported</h3>
+				<p class="report-preview-copy">
+					The Excel file contains a Campaign Summary sheet and a Message Details sheet for this selection.
+				</p>
+			</div>
+			<span class="panel-tag">${rows.reduce((total, row) => total + row.total, 0)} messages</span>
+		</div>
+		<div class="table-panel report-preview-table">
+			<table>
+				<thead>
+					<tr>
+						<th>Campaign</th>
+						<th>Status</th>
+						<th>Messages</th>
+						<th>Delivered</th>
+						<th>Sent</th>
+						<th>Failed</th>
+						<th>Delivery rate</th>
+					</tr>
+				</thead>
+				<tbody>
+					${rows.length
+						? rows.map(row => `
+							<tr>
+								<td><strong>${row.campaign.campaignName}</strong></td>
+								<td>${statusBadge(row.campaign.status)}</td>
+								<td>${row.total}</td>
+								<td>${row.delivered}</td>
+								<td>${row.sent}</td>
+								<td>${row.failed}</td>
+								<td>${row.rate}%</td>
+							</tr>
+						`).join('')
+						: '<tr><td colspan="7" class="empty-state">No campaigns match this export range.</td></tr>'}
+				</tbody>
+			</table>
+		</div>
+	`;
+}
+
+function renderDashboardInsights() {
+	const messages = state.messages || [];
+	const campaigns = state.campaigns || [];
+	const contacts = state.contacts || [];
+	const statuses = ['PENDING', 'SENT', 'DELIVERED', 'FAILED'];
 	const dashboard = $('#section-overview');
 
 	if (dashboard && !$('#dashboardInsights')) {
@@ -929,8 +1228,11 @@ function renderReports() {
 
 	const campaignRows = $('#reportCampaignRows');
 	if (campaignRows) {
-		campaignRows.innerHTML = campaigns.length
-			? campaigns.map(campaign => {
+		const { visibleItems, currentPage, totalPages, totalItems, start, end } =
+			paginateItems('reportCampaigns', campaigns, PAGE_SIZES.reportCampaigns);
+
+		campaignRows.innerHTML = visibleItems.length
+			? visibleItems.map(campaign => {
 				const campaignMessages = messages.filter(message => message.campaignId === campaign.campaignId);
 				const campaignDelivered = campaignMessages.filter(message => message.status === 'DELIVERED').length;
 				const campaignRate = campaignMessages.length
@@ -939,6 +1241,8 @@ function renderReports() {
 				return `<tr><td><strong>${campaign.campaignName}</strong><small class="muted">${displayLabel(campaign.status)}</small></td><td>${campaignMessages.length}</td><td>${campaignDelivered}</td><td>${campaignRate}%</td></tr>`;
 			}).join('')
 			: '<tr><td colspan="4" class="empty-state">No campaign data yet.</td></tr>';
+
+		renderPagination('reportCampaigns', totalItems, currentPage, totalPages, start, end);
 	}
 }
 
@@ -1149,6 +1453,7 @@ async function restoreSession() {
 
 		persistAuth(state.user);
 		applyUserToView(state.user);
+		setSection(localStorage.getItem(STORAGE_KEYS.activeSection) || 'overview');
 		await loadAll();
 		startRealtimeUpdates();
 	} catch (error) {
@@ -1456,6 +1761,12 @@ document.addEventListener(
 				nav.dataset.section ||
 				nav.dataset.sectionJump
 			);
+
+			if (
+				(nav.dataset.section || nav.dataset.sectionJump) === 'campaigns'
+			) {
+				updateCampaignTemplateSelect();
+			}
 		}
 
 		const open =
@@ -1504,24 +1815,24 @@ document.addEventListener(
 			}
 		}
 
-		const approveTemplate =
+		const submitTemplate =
 			event.target.closest(
-				'[data-approve]'
+				'[data-submit-template]'
 			);
 
-		if (approveTemplate) {
+		if (submitTemplate) {
 
 			try {
 
 				await api(
-					`/templates/${approveTemplate.dataset.approve}/approve`,
+					`/templates/${submitTemplate.dataset.submitTemplate}/submit`,
 					{
 						method: 'PUT'
 					}
 				);
 
 				showToast(
-					'Template approved'
+					'Template submitted for approval'
 				);
 
 				await loadResource(
@@ -1688,9 +1999,9 @@ document.addEventListener(
 			try {
 				const requestId = rejectRequest.dataset.requestReject;
 				await api(
-					`/account-requests/${requestId}/reject`,
+					`/users/${requestId}/reject`,
 					{
-						method: 'POST'
+						method: 'PUT'
 					}
 				);
 				showToast('Account request rejected');
@@ -1767,21 +2078,16 @@ $('#cancelPermissionDialog')
 
 $('#confirmPermissionDialog')
 	.addEventListener(
-		'click',
-		async () => {
-			const dialog = $('#permissionDialog');
-			const requestId = dialog.dataset.requestId;
-			const role = $('#approvalRole').value;
-			const permissions = [...document.querySelectorAll(
-				'#permissionOptions input:checked'
-			)].map(input => input.value);
+'click',
+async () => {
+	const dialog = $('#permissionDialog');
+	const requestId = dialog.dataset.requestId;
 
-			try {
+	try {
 				await api(
-					`/account-requests/${requestId}/approve?role=${encodeURIComponent(role)}`,
+					`/users/${requestId}/approve`,
 					{
-						method: 'POST',
-						body: JSON.stringify(permissions)
+						method: 'PUT'
 					}
 				);
 
@@ -1793,6 +2099,70 @@ $('#confirmPermissionDialog')
 			}
 		}
 	);
+
+document.addEventListener('click', event => {
+	const paginationButton = event.target.closest('[data-page-section][data-page-action]');
+
+	if (!paginationButton) {
+		return;
+	}
+
+	const section = paginationButton.dataset.pageSection;
+	const action = paginationButton.dataset.pageAction;
+	const pageSize = PAGE_SIZES[section];
+	let items = [];
+
+	switch (section) {
+		case 'contacts':
+			items = getFilteredContacts();
+			break;
+		case 'templates':
+			items = getFilteredTemplates();
+			break;
+		case 'campaigns':
+			items = getFilteredCampaigns();
+			break;
+		case 'messages':
+			items = getFilteredMessages();
+			break;
+		case 'requests':
+			items = state.requests;
+			break;
+		case 'reportCampaigns':
+			items = state.campaigns;
+			break;
+		default:
+			items = [];
+	}
+
+	const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+	const nextPage = action === 'next'
+		? Math.min((paginationState[section] || 1) + 1, totalPages)
+		: Math.max((paginationState[section] || 1) - 1, 1);
+
+	paginationState[section] = nextPage;
+
+	switch (section) {
+		case 'contacts':
+			renderContacts();
+			break;
+		case 'templates':
+			renderTemplates();
+			break;
+		case 'campaigns':
+			renderCampaigns();
+			break;
+		case 'messages':
+			renderMessages();
+			break;
+		case 'requests':
+			renderRequests();
+			break;
+		case 'reportCampaigns':
+			renderReports();
+			break;
+	}
+});
 
 applyProfessionalLabels();
 restoreSession();
@@ -1807,18 +2177,9 @@ $('#contactSearch')
 	.addEventListener(
 		'input',
 		event => {
-
-			renderContacts(
-				state.contacts.filter(
-					item =>
-						(item.contactName || '')
-							.toLowerCase()
-							.includes(
-								event.target.value
-									.toLowerCase()
-							)
-				)
-			);
+			filterState.contacts = event.target.value;
+			resetPage('contacts');
+			renderContacts();
 		}
 	);
 
@@ -1826,18 +2187,9 @@ $('#templateSearch')
 	.addEventListener(
 		'input',
 		event => {
-
-			renderTemplates(
-				state.templates.filter(
-					item =>
-						item.templateName
-							.toLowerCase()
-							.includes(
-								event.target.value
-									.toLowerCase()
-							)
-				)
-			);
+			filterState.templates = event.target.value;
+			resetPage('templates');
+			renderTemplates();
 		}
 	);
 
@@ -1845,18 +2197,9 @@ $('#campaignSearch')
 	.addEventListener(
 		'input',
 		event => {
-
-			renderCampaigns(
-				state.campaigns.filter(
-					item =>
-						item.campaignName
-							.toLowerCase()
-							.includes(
-								event.target.value
-									.toLowerCase()
-							)
-				)
-			);
+			filterState.campaigns = event.target.value;
+			resetPage('campaigns');
+			renderCampaigns();
 		}
 	);
 
@@ -1864,15 +2207,9 @@ $('#campaignStatus')
 	.addEventListener(
 		'change',
 		event => {
-
-			renderCampaigns(
-				state.campaigns.filter(
-					item =>
-						!event.target.value ||
-						item.status ===
-							event.target.value
-				)
-			);
+			filterState.campaignStatus = event.target.value;
+			resetPage('campaigns');
+			renderCampaigns();
 		}
 	);
 
@@ -1880,14 +2217,8 @@ $('#messageStatus')
 	.addEventListener(
 		'change',
 		event => {
-
-			renderMessages(
-				state.messages.filter(
-					item =>
-						!event.target.value ||
-						item.status ===
-							event.target.value
-				)
-			);
+			filterState.messages = event.target.value;
+			resetPage('messages');
+			renderMessages();
 		}
 	);

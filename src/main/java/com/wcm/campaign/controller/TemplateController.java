@@ -5,6 +5,8 @@ import com.wcm.campaign.dto.TemplateResponse;
 import com.wcm.campaign.model.Template;
 import com.wcm.campaign.service.TemplateService;
 import com.wcm.campaign.service.RealtimeEventService;
+import com.wcm.campaign.service.WhatsAppProvider;
+import com.wcm.campaign.service.WhatsAppProviderTemplate;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,13 +25,16 @@ public class TemplateController {
 
     private final TemplateService templateService;
     private final RealtimeEventService realtimeEventService;
+    private final WhatsAppProvider whatsappProvider;
 
     public TemplateController(
             TemplateService templateService,
-            RealtimeEventService realtimeEventService
+            RealtimeEventService realtimeEventService,
+            WhatsAppProvider whatsappProvider
     ) {
         this.templateService = templateService;
         this.realtimeEventService = realtimeEventService;
+        this.whatsappProvider = whatsappProvider;
     }
 
     @PostMapping
@@ -58,6 +63,12 @@ public class TemplateController {
         logger.info("Fetched {} templates", templates.size());
 
         return ResponseEntity.ok(templates);
+    }
+
+    @GetMapping("/provider")
+    @PreAuthorize("hasAuthority('TEMPLATE_VIEW')")
+    public ResponseEntity<List<WhatsAppProviderTemplate>> getProviderTemplates() {
+        return ResponseEntity.ok(whatsappProvider.listTemplates());
     }
 
     @GetMapping("/{id}")
@@ -115,30 +126,17 @@ public class TemplateController {
         return ResponseEntity.ok(new TemplateResponse(template));
     }
 
-    @PutMapping("/{id}/approve")
-    @PreAuthorize("hasAuthority('TEMPLATE_APPROVE')")
-    public ResponseEntity<TemplateResponse> approveTemplate(@PathVariable Long id) {
+    @PutMapping("/{id}/submit")
+    @PreAuthorize("hasAuthority('TEMPLATE_UPDATE')")
+    public ResponseEntity<TemplateResponse> submitTemplate(@PathVariable Long id) {
 
-        logger.info("Approving template with id={}", id);
+        logger.info("Submitting template with id={}", id);
 
-        Template template = templateService.approve(id);
+        Template template = templateService.submit(id);
 
         realtimeEventService.publishAfterCommit("templates");
 
-        logger.info("Template approved successfully with id={}", id);
-
-        return ResponseEntity.ok(new TemplateResponse(template));
-    }
-
-    @PutMapping("/{id}/reject")
-    @PreAuthorize("hasAuthority('TEMPLATE_REJECT')")
-    public ResponseEntity<TemplateResponse> rejectTemplate(@PathVariable Long id) {
-
-        logger.info("Rejecting template with id={}", id);
-
-        Template template = templateService.reject(id);
-
-        logger.info("Template rejected successfully with id={}", id);
+        logger.info("Template submitted successfully with id={}", id);
 
         return ResponseEntity.ok(new TemplateResponse(template));
     }

@@ -1,3 +1,4 @@
+
 package com.wcm.campaign.service;
 
 import org.slf4j.Logger;
@@ -14,60 +15,125 @@ import java.util.concurrent.CopyOnWriteArrayList;
 @Service
 public class RealtimeEventService {
 
-    private static final Logger logger = LoggerFactory.getLogger(RealtimeEventService.class);
+    private static final Logger logger =
+            LoggerFactory.getLogger(RealtimeEventService.class);
 
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
 
     public SseEmitter subscribe() {
+        logger.info("New realtime subscription requested");
+
         SseEmitter emitter = new SseEmitter(0L);
         emitters.add(emitter);
 
-        logger.info("New realtime client subscribed. Active clients: {}", emitters.size());
+        logger.info(
+                "Realtime client subscribed. Active clients={}",
+                emitters.size());
 
         emitter.onCompletion(() -> {
-            emitters.remove(emitter);
-            logger.info("Realtime client disconnected. Active clients: {}", emitters.size());
+            boolean removed = emitters.remove(emitter);
+
+            logger.info(
+                    "Realtime client completed. Removed={}, Active clients={}",
+                    removed, emitters.size());
         });
 
         emitter.onTimeout(() -> {
-            emitters.remove(emitter);
-            logger.info("Realtime client connection timed out. Active clients: {}", emitters.size());
+            boolean removed = emitters.remove(emitter);
+
+            logger.warn(
+                    "Realtime client timed out. Removed={}, Active clients={}",
+                    removed, emitters.size());
         });
 
         emitter.onError(error -> {
-            emitters.remove(emitter);
-            logger.warn("Realtime client connection error. Active clients: {}", emitters.size());
+            boolean removed = emitters.remove(emitter);
+
+            logger.warn(
+                    "Realtime client connection error. Removed={}, Active clients={}",
+                    removed, emitters.size(), error);
         });
 
         try {
-            emitter.send(SseEmitter.event().name("connected").data("connected"));
+            logger.debug("Sending initial connection event");
+
+            emitter.send(
+                    SseEmitter.event()
+                            .name("connected")
+                            .data("connected")
+            );
+
+            logger.info("Initial realtime connection event sent successfully");
         } catch (IOException exception) {
             emitters.remove(emitter);
-            logger.warn("Failed to send realtime connection event", exception);
+
+            logger.error(
+                    "Failed to send initial realtime connection event. Active clients={}",
+                    emitters.size(), exception);
+
+            emitter.completeWithError(exception);
         }
 
         return emitter;
     }
 
     public void publishAfterCommit(String resource) {
-        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+        if (resource == null || resource.isBlank()) {
+            logger.warn("Realtime event not published because resource is missing");
+            return;
+        }
+
+        boolean transactionActive =
+                TransactionSynchronizationManager.isSynchronizationActive();
+
+        logger.info(
+                "Realtime publication requested. Resource={}, TransactionSynchronizationActive={}, ActiveClients={}",
+                resource, transactionActive, emitters.size());
+
+        if (transactionActive) {
+            logger.debug(
+                    "Registering realtime publication after transaction commit. Resource={}",
+                    resource);
+
             TransactionSynchronizationManager.registerSynchronization(
                     new TransactionSynchronization() {
                         @Override
                         public void afterCommit() {
+                            logger.info(
+                                    "Transaction committed. Publishing realtime event. Resource={}",
+                                    resource);
+
                             publish(resource);
+                        }
+
+                        @Override
+                        public void afterCompletion(int status) {
+                            if (status != STATUS_COMMITTED) {
+                                logger.warn(
+                                        "Transaction did not commit. Realtime event will not be published. Resource={}, TransactionStatus={}",
+                                        resource, status);
+                            }
                         }
                     }
             );
+
             return;
         }
+
+        logger.debug(
+                "No active transaction synchronization. Publishing immediately. Resource={}",
+                resource);
 
         publish(resource);
     }
 
     private void publish(String resource) {
+        logger.info(
+                "Starting realtime publication. Resource={}, ActiveClients={}",
+                resource, emitters.size());
 
-        logger.info("Publishing realtime event: {}", resource);
+        int successfulDeliveries = 0;
+        int failedDeliveries = 0;
 
         for (SseEmitter emitter : emitters) {
             try {
@@ -76,10 +142,27 @@ public class RealtimeEventService {
                                 .name("data-updated")
                                 .data(resource)
                 );
-            } catch (IOException exception) {
+
+                successfulDeliveries++;
+
+                logger.debug(
+                        "Realtime event delivered successfully. Resource={}",
+                        resource);
+            } catch (IOException | IllegalStateException exception) {
+                failedDeliveries++;
                 emitters.remove(emitter);
-                logger.warn("Failed to send realtime event to client", exception);
+
+                logger.warn(
+                        "Realtime event delivery failed. Resource={}, ClientRemoved={}, RemainingClients={}",
+                        resource, true, emitters.size(), exception);
             }
         }
+
+        logger.info(
+                "Realtime publication completed. Resource={}, SuccessfulDeliveries={}, FailedDeliveries={}, ActiveClients={}",
+                resource,
+                successfulDeliveries,
+                failedDeliveries,
+                emitters.size());
     }
 }

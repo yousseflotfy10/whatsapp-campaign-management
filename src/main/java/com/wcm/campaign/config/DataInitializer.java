@@ -42,10 +42,20 @@ public class DataInitializer {
                 admin.setEmail("admin@system.com");
                 admin.setPasswordHashed(passwordEncoder.encode("Admin@123"));
                 admin.setRole(Role.ADMIN);
+                admin.setStatus(User.AccountStatus.ACTIVE);
+                admin.setApprovedAt(java.time.LocalDateTime.now());
                 userRepository.save(admin);
 
                 logger.info("System administrator created successfully");
             } else {
+                userRepository.findByUsername("admin").ifPresent(admin -> {
+                    if (admin.getStatus() != User.AccountStatus.ACTIVE) {
+                        admin.setStatus(User.AccountStatus.ACTIVE);
+                        admin.setApprovedAt(java.time.LocalDateTime.now());
+                        userRepository.save(admin);
+                        logger.info("System administrator account enabled");
+                    }
+                });
                 logger.info("System administrator already exists");
             }
 

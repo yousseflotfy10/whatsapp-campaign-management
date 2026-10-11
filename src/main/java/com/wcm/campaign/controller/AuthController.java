@@ -1,8 +1,10 @@
+
 package com.wcm.campaign.controller;
 
 import com.wcm.campaign.dto.LoginRequest;
 import com.wcm.campaign.dto.SignupRequest;
 import com.wcm.campaign.dto.UserResponse;
+import com.wcm.campaign.model.Role;
 import com.wcm.campaign.model.User;
 import com.wcm.campaign.repository.UserRepository;
 import com.wcm.campaign.service.UserService;
@@ -20,7 +22,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.web.bind.annotation.*;
-import com.wcm.campaign.model.Role;
+
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -28,7 +30,8 @@ import java.util.UUID;
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    private static final Logger logger = LoggerFactory.getLogger(AuthController.class);
+    private static final Logger logger =
+            LoggerFactory.getLogger(AuthController.class);
 
     private final UserService userService;
     private final AuthenticationManager authenticationManager;
@@ -45,9 +48,11 @@ public class AuthController {
     }
 
     @PostMapping("/signup")
-    public ResponseEntity<String> signup(@Valid @RequestBody SignupRequest request) {
-
-        logger.info("Signup request received for username={}", request.getUsername());
+    public ResponseEntity<String> signup(
+            @Valid @RequestBody SignupRequest request
+    ) {
+        logger.info("Signup request received for username={}",
+                request.getUsername());
 
         userService.createPendingUser(
                 request.getUsername(),
@@ -56,10 +61,10 @@ public class AuthController {
                 Role.EMPLOYEE
         );
 
-        logger.info("Signup completed successfully for username={}", request.getUsername());
+        logger.info("Signup completed for username={}",
+                request.getUsername());
 
-        return ResponseEntity
-                .status(HttpStatus.CREATED)
+        return ResponseEntity.status(HttpStatus.CREATED)
                 .body("Your account was created. An administrator will review and activate it.");
     }
 
@@ -70,13 +75,19 @@ public class AuthController {
             HttpServletRequest httpRequest,
             HttpServletResponse response
     ) {
+        logger.info("Signin attempt for username or email={}",
+                request.getUsernameOrEmail());
 
-        logger.info("Signin attempt for username or email={}", request.getUsernameOrEmail());
+        Authentication authentication =
+                authenticationManager.authenticate(
+                        new UsernamePasswordAuthenticationToken(
+                                request.getUsernameOrEmail(),
+                                request.getPassword()
+                        )
+                );
 
-        Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.getUsernameOrEmail(), request.getPassword()));
-
-        SecurityContextHolder.getContext().setAuthentication(authentication);
+        SecurityContextHolder.getContext()
+                .setAuthentication(authentication);
 
         new HttpSessionSecurityContextRepository().saveContext(
                 SecurityContextHolder.getContext(),
@@ -92,7 +103,10 @@ public class AuthController {
 
         user.setAccessToken(accessToken);
         user.setRefreshToken(refreshToken);
-        user.setRefreshTokenExpiresAt(LocalDateTime.now().plusDays(7));
+        user.setRefreshTokenExpiresAt(
+                LocalDateTime.now().plusDays(7)
+        );
+
         userRepository.save(user);
 
         session.setAttribute("USER_ID", user.getUserId());
@@ -103,16 +117,16 @@ public class AuthController {
         payload.setAccessToken(accessToken);
         payload.setRefreshToken(refreshToken);
 
-        logger.info("Signin successful for username={}", username);
+        logger.info("Signin successful for user id={}",
+                user.getUserId());
 
         return ResponseEntity.ok(payload);
     }
 
     @GetMapping("/me")
-    public ResponseEntity<UserResponse> me(HttpServletRequest request) {
-
-        logger.info("Fetching current authenticated user");
-
+    public ResponseEntity<UserResponse> me(
+            HttpServletRequest request
+    ) {
         User user = resolveUser(request);
 
         if (user == null) {
@@ -124,31 +138,64 @@ public class AuthController {
         response.setAccessToken(user.getAccessToken());
         response.setRefreshToken(user.getRefreshToken());
 
-        logger.info("Current user resolved successfully with id={}", user.getUserId());
-
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<UserResponse> refresh(@RequestHeader(value = "Authorization", required = false) String authorization) {
-
+    public ResponseEntity<UserResponse> refresh(
+            @RequestHeader(
+                    value = "Authorization",
+                    required = false
+            ) String authorization
+    ) {
         logger.info("Access token refresh requested");
 
-        if (authorization == null || !authorization.startsWith("Bearer ")) {
-            logger.warn("Access token refresh rejected because authorization header is missing or invalid");
+        if (authorization == null
+                || !authorization.startsWith("Bearer ")) {
+            logger.warn(
+                    "Refresh rejected: missing or invalid Authorization header"
+            );
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
         String refreshToken = authorization.substring(7).trim();
-        User user = userRepository.findByRefreshToken(refreshToken).orElse(null);
 
-        if (user == null || user.getRefreshTokenExpiresAt() == null
-                || user.getRefreshTokenExpiresAt().isBefore(LocalDateTime.now())) {
-            logger.warn("Access token refresh rejected because refresh token is invalid or expired");
+        if (refreshToken.isBlank()) {
+            logger.warn("Refresh rejected: empty refresh token");
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        User user = userRepository.findByRefreshToken(refreshToken)
+                .orElse(null);
+
+        if (user == null) {
+            logger.warn(
+                    "Refresh rejected: token does not match a stored refresh token"
+            );
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        LocalDateTime expiry = user.getRefreshTokenExpiresAt();
+
+        if (expiry == null) {
+            logger.warn(
+                    "Refresh rejected: expiry is missing for user id={}",
+                    user.getUserId()
+            );
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        if (!expiry.isAfter(LocalDateTime.now())) {
+            logger.warn(
+                    "Refresh rejected: token expired for user id={}, expiry={}",
+                    user.getUserId(),
+                    expiry
+            );
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
         String accessToken = UUID.randomUUID().toString();
+
         user.setAccessToken(accessToken);
         userRepository.save(user);
 
@@ -156,60 +203,89 @@ public class AuthController {
         response.setAccessToken(accessToken);
         response.setRefreshToken(user.getRefreshToken());
 
-        logger.info("Access token refreshed successfully for user id={}", user.getUserId());
+        logger.info(
+                "Access token refreshed successfully for user id={}",
+                user.getUserId()
+        );
 
         return ResponseEntity.ok(response);
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<String> logout(HttpSession session, HttpServletRequest request) {
-
+    public ResponseEntity<String> logout(
+            HttpSession session,
+            HttpServletRequest request
+    ) {
         logger.info("Logout requested");
-
-        session.invalidate();
-        SecurityContextHolder.clearContext();
 
         String authHeader = request.getHeader("Authorization");
 
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String accessToken = authHeader.substring(7).trim();
+
             userRepository.findByAccessToken(accessToken)
                     .ifPresent(user -> {
                         user.setAccessToken(null);
                         user.setRefreshToken(null);
                         user.setRefreshTokenExpiresAt(null);
                         userRepository.save(user);
-                        logger.info("Authentication tokens cleared for user id={}", user.getUserId());
+
+                        logger.info(
+                                "Authentication tokens cleared for user id={}",
+                                user.getUserId()
+                        );
                     });
         }
 
-        logger.info("Logout completed successfully");
+        if (session != null) {
+            session.invalidate();
+        }
+
+        SecurityContextHolder.clearContext();
+
+        logger.info("Logout completed");
 
         return ResponseEntity.ok("You have been signed out.");
     }
 
     private User resolveUser(HttpServletRequest request) {
-
         String authorization = request.getHeader("Authorization");
 
-        if (authorization != null && authorization.startsWith("Bearer ")) {
+        if (authorization != null
+                && authorization.startsWith("Bearer ")) {
             String accessToken = authorization.substring(7).trim();
-            return userRepository.findByAccessToken(accessToken).orElse(null);
+
+            return userRepository.findByAccessToken(accessToken)
+                    .orElse(null);
         }
 
         HttpSession session = request.getSession(false);
 
         if (session != null) {
             Object userId = session.getAttribute("USER_ID");
+
             if (userId != null) {
-                return userRepository.findById(Long.valueOf(userId.toString())).orElse(null);
+                try {
+                    return userRepository.findById(
+                            Long.valueOf(userId.toString())
+                    ).orElse(null);
+                } catch (NumberFormatException exception) {
+                    logger.warn("Invalid user ID found in session");
+                    return null;
+                }
             }
         }
 
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
 
-        if (authentication != null && authentication.isAuthenticated() && authentication.getName() != null) {
-            return userRepository.findByUsername(authentication.getName()).orElse(null);
+        if (authentication != null
+                && authentication.isAuthenticated()
+                && authentication.getName() != null
+                && !"anonymousUser".equals(authentication.getName())) {
+            return userRepository.findByUsername(
+                    authentication.getName()
+            ).orElse(null);
         }
 
         return null;

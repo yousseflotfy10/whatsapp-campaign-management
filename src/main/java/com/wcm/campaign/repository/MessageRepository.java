@@ -12,4 +12,6 @@ public interface MessageRepository extends JpaRepository<Message, Long> {
     List<Message> findByContact_ContactId(Long contactId);
 
     List<Message> findByStatus(String status);
+
+    java.util.Optional<Message> findByProviderMessageId(String providerMessageId);
 }

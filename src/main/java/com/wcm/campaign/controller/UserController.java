@@ -132,4 +132,18 @@ public class UserController {
 
         return ResponseEntity.ok(UserResponse.fromUser(rejectedUser));
     }
+
+    @PutMapping("/{id}/approve")
+    @PreAuthorize("hasAuthority('USER_UPDATE')")
+    public ResponseEntity<UserResponse> approveUser(@PathVariable Long id) {
+
+        logger.info("Approving user with id={}", id);
+
+        User approvedUser = userService.approveUser(id);
+        realtimeEventService.publishAfterCommit("users");
+
+        logger.info("User approved successfully with id={}", id);
+
+        return ResponseEntity.ok(UserResponse.fromUser(approvedUser));
+    }
 }

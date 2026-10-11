@@ -3,10 +3,10 @@ package com.wcm.campaign.service;
 import com.wcm.campaign.model.Contact;
 import com.wcm.campaign.model.Message;
 import com.wcm.campaign.model.Template;
+import com.wcm.campaign.config.WhatsAppProperties;
 import com.wcm.campaign.repository.MessageRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,16 +19,16 @@ public class MessageWorkerProcessor {
 
     private final MessageRepository messageRepository;
     private final WhatsAppProvider whatsappProvider;
-
-    @Value("${whatsapp.enabled:false}")
-    private boolean whatsappEnabled;
+    private final WhatsAppProperties whatsappProperties;
 
     public MessageWorkerProcessor(
             MessageRepository messageRepository,
-            WhatsAppProvider whatsappProvider
+            WhatsAppProvider whatsappProvider,
+            WhatsAppProperties whatsappProperties
     ) {
         this.messageRepository = messageRepository;
         this.whatsappProvider = whatsappProvider;
+        this.whatsappProperties = whatsappProperties;
     }
 
     @Transactional
@@ -48,7 +48,7 @@ public class MessageWorkerProcessor {
             return;
         }
 
-        if (!whatsappEnabled) {
+        if (!whatsappProperties.isEnabled()) {
             logger.info("WhatsApp provider is disabled. Message {} remains PENDING", messageId);
             return;
         }

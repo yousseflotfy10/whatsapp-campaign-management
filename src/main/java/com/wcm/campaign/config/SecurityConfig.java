@@ -61,6 +61,7 @@ public class SecurityConfig {
                 .addFilterBefore(accessTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .securityContext(securityContext -> securityContext.requireExplicitSave(false))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(
                                 "/api/auth/signup",
@@ -68,15 +69,20 @@ public class SecurityConfig {
                                 "/api/auth/me",
                                 "/api/auth/refresh",
                                 "/api/auth/logout",
+                                "/webhook",
+                                "/api/whatsapp/webhook",
+                                "/*/webhook",
+                                "/**/webhook",
+                                "/api/webhook",
                                 "/",
                                 "/index",
                                 "/css/**",
-                                "/js/**"
+                                "/js/**",
+                                "/favicon.ico",
+                                "/error"
                         ).permitAll()
-                        .anyRequest()
-                        .authenticated()
+                        .anyRequest().authenticated()
                 );
-
         logger.info("Security filter chain configured successfully");
 
         return http.build();

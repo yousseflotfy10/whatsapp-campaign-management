@@ -10,4 +10,6 @@ public interface TemplateRepository extends JpaRepository<Template, Long> {
     List<Template> findByStatus(String status);
 
     List<Template> findByTemplateNameContainingIgnoreCase(String templateName);
+
+    java.util.Optional<Template> findByTemplateName(String templateName);
 }
