@@ -1,10 +1,13 @@
+
 package com.wcm.campaign.controller;
 
 import com.wcm.campaign.dto.UserRequest;
 import com.wcm.campaign.dto.UserResponse;
+import com.wcm.campaign.model.Permission;
+import com.wcm.campaign.model.Role;
 import com.wcm.campaign.model.User;
-import com.wcm.campaign.service.UserService;
 import com.wcm.campaign.service.RealtimeEventService;
+import com.wcm.campaign.service.UserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -19,7 +22,8 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/users")
 public class UserController {
 
-    private static final Logger logger = LoggerFactory.getLogger(UserController.class);
+    private static final Logger logger =
+            LoggerFactory.getLogger(UserController.class);
 
     private final UserService userService;
     private final RealtimeEventService realtimeEventService;
@@ -35,69 +39,54 @@ public class UserController {
     @GetMapping
     @PreAuthorize("hasAuthority('USER_VIEW')")
     public ResponseEntity<List<UserResponse>> getAllUsers() {
-
-        logger.info("Fetching all users");
-
-        List<UserResponse> users = userService
-                .getAllUsers()
+        List<UserResponse> users = userService.getAllUsers()
                 .stream()
                 .map(UserResponse::fromUser)
                 .collect(Collectors.toList());
-
-        logger.info("Fetched {} users", users.size());
 
         return ResponseEntity.ok(users);
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('USER_VIEW')")
-    public ResponseEntity<UserResponse> getUserById(@PathVariable Long id) {
-
-        logger.info("Fetching user with id={}", id);
-
+    public ResponseEntity<UserResponse> getUserById(
+            @PathVariable Long id
+    ) {
         User user = userService.getUserById(id);
-
         return ResponseEntity.ok(UserResponse.fromUser(user));
     }
 
     @PostMapping
     @PreAuthorize("hasAuthority('USER_CREATE')")
-    public ResponseEntity<UserResponse> createUser(@RequestBody UserRequest request) {
-
-        logger.info("Creating user");
-
+    public ResponseEntity<UserResponse> createUser(
+            @RequestBody UserRequest request
+    ) {
         User createdUser = userService.createUser(request);
         realtimeEventService.publishAfterCommit("users");
 
-        logger.info("User created successfully with id={}", createdUser.getUserId());
-
-        return ResponseEntity.status(HttpStatus.CREATED).body(UserResponse.fromUser(createdUser));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(UserResponse.fromUser(createdUser));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('USER_UPDATE')")
-    public ResponseEntity<UserResponse> updateUser(@PathVariable Long id, @RequestBody UserRequest request) {
-
-        logger.info("Updating user with id={}", id);
-
+    public ResponseEntity<UserResponse> updateUser(
+            @PathVariable Long id,
+            @RequestBody UserRequest request
+    ) {
         User updatedUser = userService.updateUser(id, request);
         realtimeEventService.publishAfterCommit("users");
-
-        logger.info("User updated successfully with id={}", id);
 
         return ResponseEntity.ok(UserResponse.fromUser(updatedUser));
     }
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasAuthority('USER_DELETE')")
-    public ResponseEntity<Void> deleteUser(@PathVariable Long id) {
-
-        logger.info("Deleting user with id={}", id);
-
+    public ResponseEntity<Void> deleteUser(
+            @PathVariable Long id
+    ) {
         userService.deleteUser(id);
         realtimeEventService.publishAfterCommit("users");
-
-        logger.info("User deleted successfully with id={}", id);
 
         return ResponseEntity.noContent().build();
     }
@@ -105,45 +94,63 @@ public class UserController {
     @GetMapping("/pending")
     @PreAuthorize("hasAuthority('USER_VIEW')")
     public ResponseEntity<List<UserResponse>> getPendingUsers() {
-
-        logger.info("Fetching pending users");
-
         List<UserResponse> users = userService.getPendingUsers()
                 .stream()
                 .map(UserResponse::fromUser)
                 .collect(Collectors.toList());
 
-        logger.info("Fetched {} pending users", users.size());
-
         return ResponseEntity.ok(users);
-    }
-
-    @PutMapping("/{id}/reject")
-    @PreAuthorize("hasAuthority('USER_UPDATE')")
-    public ResponseEntity<UserResponse> rejectUser(@PathVariable Long id) {
-
-        logger.info("Rejecting user with id={}", id);
-
-        User rejectedUser = userService.rejectUser(id);
-
-        realtimeEventService.publishAfterCommit("users");
-
-        logger.info("User rejected successfully with id={}", id);
-
-        return ResponseEntity.ok(UserResponse.fromUser(rejectedUser));
     }
 
     @PutMapping("/{id}/approve")
     @PreAuthorize("hasAuthority('USER_UPDATE')")
-    public ResponseEntity<UserResponse> approveUser(@PathVariable Long id) {
+    public ResponseEntity<UserResponse> approveUser(
+            @PathVariable Long id,
+            @RequestBody ApproveUserRequest request
+    ) {
+        logger.info("Approving pending user {}", id);
 
-        logger.info("Approving user with id={}", id);
+        User approvedUser = userService.approveUser(
+                id,
+                request.getRole(),
+                request.getPermissions()
+        );
 
-        User approvedUser = userService.approveUser(id);
         realtimeEventService.publishAfterCommit("users");
 
-        logger.info("User approved successfully with id={}", id);
-
         return ResponseEntity.ok(UserResponse.fromUser(approvedUser));
+    }
+
+    @PutMapping("/{id}/reject")
+    @PreAuthorize("hasAuthority('USER_UPDATE')")
+    public ResponseEntity<UserResponse> rejectUser(
+            @PathVariable Long id
+    ) {
+        User rejectedUser = userService.rejectUser(id);
+        realtimeEventService.publishAfterCommit("users");
+
+        return ResponseEntity.ok(UserResponse.fromUser(rejectedUser));
+    }
+
+    public static class ApproveUserRequest {
+
+        private Role role;
+        private List<Permission> permissions;
+
+        public Role getRole() {
+            return role;
+        }
+
+        public void setRole(Role role) {
+            this.role = role;
+        }
+
+        public List<Permission> getPermissions() {
+            return permissions;
+        }
+
+        public void setPermissions(List<Permission> permissions) {
+            this.permissions = permissions;
+        }
     }
 }

@@ -32,37 +32,35 @@ public class CustomUserDetailsService implements UserDetailsService {
     }
 
     @Override
-    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+    public UserDetails loadUserByUsername(String username)
+            throws UsernameNotFoundException {
 
-        logger.info("Loading user details for username={}", username);
-
-        User user = userRepository.findByUsername(username).orElseThrow(() -> {
-            logger.warn("User not found for username={}", username);
-            return new UsernameNotFoundException("User not found: " + username);
-        });
+        User user = userRepository.findByUsername(username)
+                .or(() -> userRepository.findByEmail(username))
+                .orElseThrow(() ->
+                        new UsernameNotFoundException("User not found"));
 
         List<GrantedAuthority> authorities = new ArrayList<>();
 
-        authorities.add(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()));
+        authorities.add(new SimpleGrantedAuthority(
+                "ROLE_" + user.getRole().name()
+        ));
 
         if (user.getRole() == Role.ADMIN) {
             for (Permission permission : Permission.values()) {
                 authorities.add(new SimpleGrantedAuthority(permission.name()));
             }
-
-            logger.info("Loaded administrator permissions for username={}", username);
         } else {
-            List<UserPermission> userPermissions = userPermissionRepository.findByUser(user);
+            List<UserPermission> userPermissions =
+                    userPermissionRepository.findByUser(user);
 
             for (UserPermission userPermission : userPermissions) {
                 authorities.add(new SimpleGrantedAuthority(
-                        userPermission.getPermission().getPermissionName().name()));
+                        userPermission.getPermission()
+                                .getPermissionName().name()
+                ));
             }
-
-            logger.info("Loaded {} permissions for username={}", userPermissions.size(), username);
         }
-
-        logger.info("User details loaded successfully for username={}", username);
 
         return org.springframework.security.core.userdetails.User
                 .withUsername(user.getUsername())
@@ -70,5 +68,4 @@ public class CustomUserDetailsService implements UserDetailsService {
                 .authorities(authorities)
                 .disabled(user.getStatus() != User.AccountStatus.ACTIVE)
                 .build();
-    }
-}
+    }}

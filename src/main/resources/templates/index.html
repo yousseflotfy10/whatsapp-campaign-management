@@ -67,14 +67,82 @@
         <section class="content-section active" id="section-overview">
             <div class="welcome-row"><div><h3>Good to have you here.</h3><p>Keep your messaging workflow moving from audience to delivery.</p></div><button class="button button-primary" data-section-jump="campaigns">Create campaign <span>+</span></button></div>
             <div class="metric-grid"><article class="metric-card"><span class="metric-label">Contacts</span><strong id="metricContacts">--</strong><span class="metric-foot">Active audience records</span></article><article class="metric-card"><span class="metric-label">Templates</span><strong id="metricTemplates">--</strong><span class="metric-foot">Reusable message content</span></article><article class="metric-card"><span class="metric-label">Campaigns</span><strong id="metricCampaigns">--</strong><span class="metric-foot">All campaign drafts</span></article><article class="metric-card accent"><span class="metric-label">Messages</span><strong id="metricMessages">--</strong><span class="metric-foot">Tracked message records</span></article></div>
-            <div class="split-grid"><article class="panel"><div class="panel-heading"><div><p class="eyebrow">Workflow</p><h3>Campaign lifecycle</h3></div><span class="panel-tag">Live records</span></div><div class="lifecycle"><div><span class="life-number">01</span><strong>Draft</strong><small id="dashboardDraftCount">0 campaigns</small></div><i></i><div><span class="life-number">02</span><strong>Pending</strong><small id="dashboardPendingCount">0 campaigns</small></div><i></i><div><span class="life-number">03</span><strong>Approved</strong><small id="dashboardApprovedCount">0 campaigns</small></div></div></article><article class="panel"><div class="panel-heading"><div><p class="eyebrow">Delivery pulse</p><h3>Message health</h3></div><span class="panel-tag" id="dashboardDeliveryRate">0% delivered</span></div><div class="report-mini-grid"><div><strong id="dashboardPendingMessages">0</strong><small>Pending</small></div><div><strong id="dashboardSentMessages">0</strong><small>Sent</small></div><div><strong id="dashboardDeliveredMessages">0</strong><small>Delivered</small></div><div><strong id="dashboardFailedMessages">0</strong><small>Failed</small></div></div></article></div>
+            <div class="split-grid"><article class="panel"><div class="panel-heading"><div><p class="eyebrow">Workflow</p><h3>Campaign lifecycle</h3></div><span class="panel-tag">Live records</span></div><div class="lifecycle"><div><span class="life-number">01</span><strong>Draft</strong><small id="dashboardDraftCount">0 campaigns</small></div><i></i><div><span class="life-number">02</span><strong>Pending</strong><small id="dashboardPendingCount">0 campaigns</small></div><i></i><div><span class="life-number">03</span><strong>Approved</strong><small id="dashboardApprovedCount">0 campaigns</small></div></div></article><article class="panel"><div class="panel-heading"><div><p class="eyebrow">Delivery pulse</p><h3>Message health</h3></div><span class="panel-tag" id="dashboardDeliveryRate">0% delivered</span></div>
+
+                <div class="report-mini-grid">
+                    <div>
+                        <strong id="dashboardPendingMessages">0</strong>
+                        <small>Pending</small>
+                    </div>
+                    <div>
+                        <strong id="dashboardSentMessages">0</strong>
+                        <small>Sent</small>
+                    </div>
+                    <div>
+                        <strong id="dashboardDeliveredMessages">0</strong>
+                        <small>Delivered</small>
+                    </div>
+                    <div>
+                        <strong id="dashboardReadMessages">0</strong>
+                        <small>Read</small>
+                    </div>
+                    <div>
+                        <strong id="dashboardFailedMessages">0</strong>
+                        <small>Failed</small>
+                    </div>
+                </div>
+            </article>
+            </div>
         </section>
 
         <section class="content-section" id="section-contacts"><div class="section-heading"><div><p class="eyebrow">Audience</p><h3>Contacts</h3><p>Upload a CSV audience list and manage its contact records.</p></div><button class="button button-primary" data-open-form="contactForm">Upload contacts <span>↑</span></button></div><div id="contactForm" class="form-panel hidden"><form id="bulkUploadForm" class="resource-form bulk-upload-form"><label class="file-input-label">CSV audience file<input name="file" type="file" accept=".csv,text/csv" required></label><span class="upload-hint">Required columns: contact name and phone number(s).</span><button class="button button-primary">Upload CSV</button></form></div><div class="toolbar"><input id="contactSearch" placeholder="Search contacts by name"><span id="contactCount" class="result-count"></span><div class="pagination-bar" id="contactsPagination"></div></div><div class="table-panel"><table><thead><tr><th>Name</th><th>Phone numbers</th><th>List</th><th>Status</th><th></th></tr></thead><tbody id="contactsTable"><tr><td colspan="5" class="empty-state">Loading contacts...</td></tr></tbody></table></div></section>
 
         <section class="content-section" id="section-templates"><div class="section-heading"><div><p class="eyebrow">Content library</p><h3>Message templates</h3><p>Create reusable content and move it through approval.</p></div><button class="button button-primary" data-open-form="templateForm">New template <span>+</span></button></div><div id="templateForm" class="form-panel hidden"><form class="resource-form" data-resource="templates"><input name="templateName" placeholder="Template name" required><textarea name="templateContent" placeholder="Write the message content..." required></textarea><button class="button button-primary">Save template</button></form></div><div class="toolbar"><input id="templateSearch" placeholder="Search templates"><span id="templateCount" class="result-count"></span><div class="pagination-bar" id="templatePagination"></div></div><div class="table-panel"><table><thead><tr><th>Template</th><th>Content</th><th>Status</th><th>Actions</th></tr></thead><tbody id="templatesTable"><tr><td colspan="4" class="empty-state">Loading templates...</td></tr></tbody></table></div></section>
 
-        <section class="content-section" id="section-campaigns"><div class="section-heading"><div><p class="eyebrow">Orchestration</p><h3>Campaigns</h3><p>Create the campaign, then add its audience and template.</p></div><button class="button button-primary" data-open-form="campaignForm">New campaign <span>+</span></button></div><div id="campaignForm" class="form-panel hidden"><form class="resource-form campaign-grid-form" data-resource="campaigns"><div class="form-field"><label>Campaign name</label><input id="campaignNameInput" name="campaignName" placeholder="Campaign name" required></div><div class="form-field"><label>Sender name</label><input id="campaignSenderInput" name="senderName" placeholder="Sender name"></div><div class="form-field field-with-action"><div class="field-action-header"><label>Audience list</label><div class="field-action-buttons"><button type="button" class="table-action" data-open-form="campaignBulkForm">Upload bulk</button><button type="button" class="table-action" data-open-form="campaignContactForm">Add contact</button></div></div><select id="campaignListSelect" name="listId" required><option value="">Select an existing contact list</option></select></div><div class="form-field"><label>Message template</label><select id="campaignTemplateSelect" name="templateId" required><option value="">Select an approved template</option></select><small id="campaignTemplateHint" class="form-note"></small></div><div class="form-actions"><button class="button button-primary" type="submit">Create campaign</button></div></form><div id="campaignBulkForm" class="nested-form hidden"><p class="eyebrow">Campaign audience • Bulk upload</p><form id="campaignBulkUploadForm" class="resource-form bulk-subform"><label class="file-input-label">CSV audience file<input name="file" type="file" accept=".csv,text/csv" required></label><button class="button button-primary" type="submit">Upload bulk contacts</button></form></div><div id="campaignContactForm" class="nested-form hidden"><p class="eyebrow">Campaign audience • Add contact</p><form id="campaignSingleContactForm" class="resource-form contact-subform" data-resource="contacts"><input name="contactName" placeholder="Contact name" required><input name="contactNumbers" placeholder="Phone number(s)" required><label class="file-input-label optional-csv"><span>Include CSV file (optional)</span><input name="file" type="file" accept=".csv,text/csv"></label><button class="button button-primary" type="submit">Save contact & create audience list</button></form><p class="subform-note">A new audience list will be created with this contact and any CSV selected.</p></div></div><div class="toolbar"><input id="campaignSearch" placeholder="Search campaigns"><select id="campaignStatus"><option value="">All statuses</option><option>DRAFT</option><option>PENDING</option><option>APPROVED</option><option>REJECTED</option></select><span id="campaignCount" class="result-count"></span><div class="pagination-bar" id="campaignPagination"></div></div><div class="table-panel"><table><thead><tr><th>Campaign</th><th>Audience</th><th>Template</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody id="campaignsTable"><tr><td colspan="6" class="empty-state">Loading campaigns...</td></tr></tbody></table></div></section>
+        <section class="content-section" id="section-campaigns"><div class="section-heading"><div><p class="eyebrow">Orchestration</p><h3>Campaigns</h3><p>Create the campaign, then add its audience and template.</p></div><button class="button button-primary" data-open-form="campaignForm">New campaign <span>+</span></button></div><div id="campaignForm" class="form-panel hidden"><form class="resource-form campaign-grid-form" data-resource="campaigns"><div class="form-field"><label>Campaign name</label><input id="campaignNameInput" name="campaignName" placeholder="Campaign name" required></div><div class="form-field"><label>Sender name</label><input id="campaignSenderInput" name="senderName" placeholder="Sender name"></div><div class="form-field field-with-action"><div class="field-action-header"><label>Audience list</label><div class="field-action-buttons"><button type="button" class="table-action" data-open-form="campaignBulkForm">Upload bulk</button><button type="button" class="table-action" data-open-form="campaignContactForm">Add contact</button></div></div>
+            <select id="campaignListSelect" name="listIds" multiple size="4">
+            </select>
+        </div><div class="form-field"><label>Message template</label><select id="campaignTemplateSelect" name="templateId" required><option value="">Select an approved template</option></select><small id="campaignTemplateHint" class="form-note"></small></div><div class="form-actions"><button class="button button-primary" type="submit">Create campaign</button></div></form><div id="campaignBulkForm" class="nested-form hidden"><p class="eyebrow">Campaign audience • Bulk upload</p><form id="campaignBulkUploadForm" class="resource-form bulk-subform"><label class="file-input-label">CSV audience file<input name="file" type="file" accept=".csv,text/csv" required></label><button class="button button-primary" type="submit">Upload bulk contacts</button></form></div>
+            <div id="campaignContactForm" class="nested-form hidden">
+                <p class="eyebrow">Campaign audience • Add contacts</p>
+
+                <div id="campaignManualContacts" class="stack-form">
+                    <div class="campaign-manual-contact">
+                        <input
+                                name="contactName"
+                                placeholder="Contact name"
+                                required
+                        >
+                        <input
+                                name="contactNumbers"
+                                placeholder="Phone number(s)"
+                                required
+                        >
+                    </div>
+                </div>
+
+                <div class="field-action-buttons">
+                    <button
+                            type="button"
+                            class="table-action"
+                            id="addCampaignContactButton">
+                        Add another contact
+                    </button>
+
+                    <button
+                            type="button"
+                            class="table-action"
+                            id="closeCampaignContactButton">
+                        Done
+                    </button>
+                </div>
+
+                <p class="subform-note">
+                    These contacts will be included in the campaign audience.
+                    Duplicate phone numbers will be removed.
+                </p>
+            </div>
+        </div><div class="toolbar"><input id="campaignSearch" placeholder="Search campaigns"><select id="campaignStatus"><option value="">All statuses</option><option>DRAFT</option><option>PENDING</option><option>APPROVED</option><option>REJECTED</option></select><span id="campaignCount" class="result-count"></span><div class="pagination-bar" id="campaignPagination"></div></div><div class="table-panel"><table><thead><tr><th>Campaign</th><th>Audience</th><th>Template</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead><tbody id="campaignsTable"><tr><td colspan="6" class="empty-state">Loading campaigns...</td></tr></tbody></table></div></section>
 
         <section class="content-section" id="section-messages"><div class="section-heading"><div><p class="eyebrow">Delivery records</p><h3>Messages</h3><p>Review message records and their current application status.</p></div><span class="readonly-badge">Read-only backend</span></div><div class="toolbar"><select id="messageStatus"><option value="">All statuses</option><option>PENDING</option><option>SENT</option><option>DELIVERED</option><option>FAILED</option></select><span id="messageCount" class="result-count"></span><div class="pagination-bar" id="messagesPagination"></div></div><div class="table-panel"><table><thead><tr><th>ID</th><th>Campaign</th><th>Contact</th><th>Content</th><th>Status</th><th>Sent</th></tr></thead><tbody id="messagesTable"><tr><td colspan="6" class="empty-state">Loading messages...</td></tr></tbody></table></div></section>
 

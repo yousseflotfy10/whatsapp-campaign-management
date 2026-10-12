@@ -8,6 +8,9 @@ import com.wcm.campaign.model.User.AccountStatus;
 import java.util.List;
 import java.util.Optional;
 
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
 public interface UserRepository extends JpaRepository<User, Long> {
 
     @Override
@@ -37,5 +40,16 @@ public interface UserRepository extends JpaRepository<User, Long> {
     boolean existsByRole(Role role);
 
     List<User> findByStatus(AccountStatus status);
+
+    @Query("""
+    SELECT DISTINCT u
+    FROM User u
+    LEFT JOIN FETCH u.userPermissions up
+    LEFT JOIN FETCH up.permission
+    WHERE u.status = :status
+    """)
+    List<User> findByStatusWithPermissions(
+            @Param("status") User.AccountStatus status
+    );
 
 }

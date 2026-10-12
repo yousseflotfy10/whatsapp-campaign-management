@@ -13,6 +13,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.wcm.campaign.dto.CampaignContactRequest;
+import java.util.LinkedHashSet;
+import java.util.Set;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -156,6 +160,121 @@ public class ContactService {
 
         return contact;
     }
+
+
+    @Transactional
+    public ContactList createCombinedAudience(
+            List<String> sourceListIds,
+            List<CampaignContactRequest> manualContacts
+    ) {
+        Map<String, Contact> uniqueContacts = new LinkedHashMap<>();
+
+        if (sourceListIds != null) {
+            for (String sourceId : sourceListIds) {
+                if (sourceId == null || sourceId.isBlank()) {
+                    continue;
+                }
+
+                ContactList sourceList = contactListRepository.findById(sourceId.trim())
+                        .orElseThrow(() ->
+                                new IllegalArgumentException("Contact list not found: " + sourceId));
+
+                for (Contact contact : sourceList.getContacts()) {
+                    if (Boolean.TRUE.equals(contact.getIsActive())
+                            && contact.getContactNumbers() != null
+                            && !contact.getContactNumbers().isBlank()) {
+                        uniqueContacts.putIfAbsent(
+                                contact.getContactNumbers(),
+                                contact
+                        );
+                    }
+                }
+            }
+        }
+
+        if (manualContacts != null) {
+            for (CampaignContactRequest request : manualContacts) {
+                if (request == null
+                        || request.getContactName() == null
+                        || request.getContactName().isBlank()
+                        || request.getContactNumbers() == null
+                        || request.getContactNumbers().isBlank()) {
+                    throw new IllegalArgumentException(
+                            "Every manual contact must have a name and phone number"
+                    );
+                }
+
+                String name = request.getContactName().trim();
+                String numbers = normalizeNumbers(request.getContactNumbers());
+
+                if (uniqueContacts.containsKey(numbers)) {
+                    continue;
+                }
+
+                Optional<Contact> existing =
+                        contactRepository.findFirstByContactNumbersAndIsActiveTrue(numbers);
+
+                Contact contact;
+
+                if (existing.isPresent()) {
+                    contact = existing.get();
+                } else {
+                    contact = new Contact();
+                    contact.setContactName(name);
+                    contact.setContactNumbers(numbers);
+                    contact.setIsActive(true);
+                    contact = contactRepository.save(contact);
+                }
+
+                uniqueContacts.put(numbers, contact);
+            }
+        }
+
+        if (uniqueContacts.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Select at least one contact list or add a manual contact"
+            );
+        }
+
+        List<BulkContactRow> rows = new ArrayList<>();
+
+        for (Contact contact : uniqueContacts.values()) {
+            rows.add(new BulkContactRow(
+                    contact.getContactName(),
+                    contact.getContactNumbers()
+            ));
+        }
+
+        String listHash = generateListHash(rows);
+
+        Optional<ContactList> existingList =
+                contactListRepository.findByListHash(listHash);
+
+        if (existingList.isPresent()) {
+            return existingList.get();
+        }
+
+        String listName = "Campaign Audience - " + listHash.substring(0, 8);
+
+        ContactList combinedList =
+                new ContactList(listHash, listName, listHash);
+
+        combinedList = contactListRepository.save(combinedList);
+
+        for (Contact contact : uniqueContacts.values()) {
+            contact.addContactList(combinedList);
+            contactRepository.save(contact);
+        }
+
+        logger.info(
+                "Combined audience created: {}, contacts: {}",
+                combinedList.getListId(),
+                uniqueContacts.size()
+        );
+
+        return combinedList;
+    }
+
 
     @Transactional(readOnly = true)
     public List<Contact> getAllContacts() {

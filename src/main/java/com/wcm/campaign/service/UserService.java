@@ -231,20 +231,47 @@ public class UserService {
     }
 
     @Transactional
-    public User createPendingUser(String username, String email, String password, Role role) {
-
-        logger.info("Creating pending user");
-
-        if (username == null || username.isBlank()) {
-            throw new IllegalArgumentException("Username is required");
+    public User createPendingUser(
+            String username,
+            String email,
+            String password,
+            Role role
+    ) {
+        if (userRepository.existsByUsername(username)) {
+            throw new IllegalArgumentException("Username already exists");
         }
 
-        if (email == null || email.isBlank()) {
-            throw new IllegalArgumentException("Email is required");
+        if (userRepository.existsByEmail(email)) {
+            throw new IllegalArgumentException("Email already exists");
         }
 
-        if (password == null || password.isBlank()) {
-            throw new IllegalArgumentException("Password is required");
+        User user = new User();
+        user.setUsername(username);
+        user.setEmail(email);
+        user.setPasswordHashed(passwordEncoder.encode(password));
+        user.setRole(role);
+        user.setStatus(User.AccountStatus.PENDING);
+
+        return userRepository.save(user);
+    }
+
+    public List<User> getPendingUsers() {
+        logger.info("Fetching pending users");
+        return userRepository.findByStatusWithPermissions(
+                User.AccountStatus.PENDING
+        );
+    }
+
+
+    @Transactional
+    public User approveUser(Long userId, Role role, List<Permission> permissions) {
+        logger.info("Approving user {}", userId);
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        if (user.getStatus() != User.AccountStatus.PENDING) {
+            throw new IllegalArgumentException("Only pending users can be approved");
         }
 
         if (role == null) {
@@ -252,64 +279,33 @@ public class UserService {
         }
 
         if (role == Role.ADMIN) {
-            logger.warn("Pending user creation failed: ADMIN signup is not allowed");
-            throw new IllegalArgumentException("Administrator accounts cannot be created through signup");
+            throw new IllegalArgumentException(
+                    "An administrator role cannot be assigned through account approval"
+            );
         }
 
-        if (userRepository.existsByUsername(username)) {
-            logger.warn("Pending user creation failed: username already exists");
-            throw new IllegalArgumentException("Username already exists");
+        if (permissions == null || permissions.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "At least one permission is required to activate the account"
+            );
         }
 
-        if (userRepository.existsByEmail(email)) {
-            logger.warn("Pending user creation failed: email already exists");
-            throw new IllegalArgumentException("Email already exists");
-        }
-
-        User user = new User();
-
-        user.setUsername(username.trim());
-        user.setEmail(email.trim());
-        user.setPasswordHashed(passwordEncoder.encode(password));
         user.setRole(role);
-        user.setStatus(User.AccountStatus.PENDING);
 
-        User savedUser = userRepository.save(user);
-
-        logger.info("Pending user created successfully with id {}", savedUser.getUserId());
-
-        return savedUser;
-    }
-
-    public List<User> getPendingUsers() {
-        logger.info("Fetching pending users");
-        return userRepository.findByStatus(User.AccountStatus.PENDING);
-    }
-
-    @Transactional
-    public User approveUser(Long userId) {
-
-        logger.info("Approving user {}", userId);
-
-        User user = userRepository.findById(userId).orElseThrow(() -> {
-            logger.warn("User not found with id {}", userId);
-            return new IllegalArgumentException("User not found");
-        });
-
-        if (user.getStatus() != User.AccountStatus.PENDING) {
-            logger.warn("User {} cannot be approved because its status is {}", userId, user.getStatus());
-            throw new IllegalArgumentException("Only pending users can be approved");
-        }
+        userPermissionRepository.deleteByUser(user);
+        user.getUserPermissions().clear();
+        assignPermissions(user, permissions);
 
         user.setStatus(User.AccountStatus.ACTIVE);
         user.setApprovedAt(java.time.LocalDateTime.now());
 
         User approvedUser = userRepository.save(user);
 
-        logger.info("User {} approved successfully", userId);
+        logger.info("User {} approved and activated successfully", userId);
 
         return approvedUser;
     }
+
 
     @Transactional
     public User rejectUser(Long userId) {

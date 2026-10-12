@@ -1125,7 +1125,7 @@ function renderDashboardInsights() {
 	const messages = state.messages || [];
 	const campaigns = state.campaigns || [];
 	const contacts = state.contacts || [];
-	const statuses = ['PENDING', 'SENT', 'DELIVERED', 'FAILED'];
+    const statuses = ['PENDING', 'SENT', 'DELIVERED', 'READ', 'FAILED'];
 	const dashboard = $('#section-overview');
 
 	if (dashboard && !$('#dashboardInsights')) {
@@ -1155,10 +1155,10 @@ function renderDashboardInsights() {
 			messages.filter(message => message.status === status).length
 		])
 	);
-	const delivered = statusCounts.DELIVERED;
-	const deliveryRate = messages.length
-		? Math.round((delivered / messages.length) * 100)
-		: 0;
+	const delivered = statusCounts.DELIVERED + statusCounts.READ;
+    const deliveryRate = messages.length
+        ? Math.round((delivered / messages.length) * 100)
+        : 0;
 	const campaignStatuses = ['DRAFT', 'PENDING', 'APPROVED', 'REJECTED'];
 	const campaignCounts = Object.fromEntries(
 		campaignStatuses.map(status => [
@@ -1234,11 +1234,22 @@ function renderDashboardInsights() {
 	}).sort((left, right) => right.value - left.value).slice(0, 5);
 
 	renderBars('#dashboardCampaignPerformance', performance, 100);
-	setText('#dashboardInsightTitle', deliveryRate >= 80 ? 'Delivery is on track' : 'Delivery needs attention');
-	setText('#dashboardInsightText', messages.length
-		? `${delivered} of ${messages.length} messages are delivered (${deliveryRate}%). ${statusCounts.FAILED} failed messages and ${campaignCounts.PENDING} campaigns are currently waiting for attention.`
-		: 'Approve a campaign to generate message delivery data and performance insights.');
+    setText(
+        '#dashboardInsightTitle',
+        deliveryRate >= 80
+            ? 'Delivery is on track'
+            : 'Delivery needs attention'
+    );
 
+    setText(
+        '#dashboardInsightText',
+        messages.length
+            ? `${delivered} of ${messages.length} messages were delivered or read (${deliveryRate}%). ${statusCounts.FAILED} failed messages and ${campaignCounts.PENDING} campaigns are currently waiting for attention.`
+            : 'Approve a campaign to generate message delivery data and performance insights.'
+    );
+
+    setText('#dashboardReadMessages', statusCounts.READ);
+    setText('#dashboardReadMessages', statusCounts.READ);
 	const statusRows = $('#reportStatusRows');
 	if (statusRows) {
 		statusRows.innerHTML = statuses.map(status => `
@@ -1310,6 +1321,7 @@ async function exportReport() {
 	}
 }
 
+
 function startRealtimeUpdates() {
 	if (realtimeAbortController) {
 		return;
@@ -1318,6 +1330,23 @@ function startRealtimeUpdates() {
 	const controller = new AbortController();
 	realtimeAbortController = controller;
 	const accessToken = localStorage.getItem(STORAGE_KEYS.accessToken);
+
+	const reconnect = () => {
+		if (controller.signal.aborted) {
+			return;
+		}
+
+		if (realtimeAbortController === controller) {
+			realtimeAbortController = null;
+		}
+
+		if (!realtimeReconnectTimer) {
+			realtimeReconnectTimer = setTimeout(() => {
+				realtimeReconnectTimer = null;
+				startRealtimeUpdates();
+			}, 3000);
+		}
+	};
 
 	fetch('/api/realtime/stream', {
 		credentials: 'same-origin',
@@ -1328,8 +1357,12 @@ function startRealtimeUpdates() {
 	})
 		.then(async response => {
 			if (!response.ok || !response.body) {
-				throw new Error(`Realtime connection failed (${response.status})`);
+				throw new Error(
+					`Realtime connection failed (${response.status})`
+				);
 			}
+
+			console.info('Realtime connection established');
 
 			const reader = response.body.getReader();
 			const decoder = new TextDecoder();
@@ -1337,34 +1370,36 @@ function startRealtimeUpdates() {
 
 			while (!controller.signal.aborted) {
 				const { value, done } = await reader.read();
+
 				if (done) {
 					break;
 				}
 
 				buffer += decoder.decode(value, { stream: true });
-				const events = buffer.split('\n\n');
+
+				const events = buffer.split(/\r?\n\r?\n/);
 				buffer = events.pop() || '';
 
 				for (const event of events) {
 					if (event.includes('event: data-updated')) {
+						console.info('Realtime update received');
 						await loadAll();
 					}
 				}
 			}
+
+			if (!controller.signal.aborted) {
+				reconnect();
+			}
 		})
 		.catch(error => {
-			if (controller.signal.aborted) {
-				return;
+			if (!controller.signal.aborted) {
+				console.error('Realtime connection error:', error);
+				reconnect();
 			}
-
-			realtimeAbortController = null;
-			realtimeReconnectTimer = setTimeout(() => {
-				realtimeReconnectTimer = null;
-				startRealtimeUpdates();
-			}, 3000);
 		})
 		.finally(() => {
-			if (!controller.signal.aborted && realtimeAbortController === controller) {
+			if (realtimeAbortController === controller) {
 				realtimeAbortController = null;
 			}
 		});
@@ -1382,31 +1417,40 @@ function stopRealtimeUpdates() {
 	}
 }
 
+
+
 async function loadLists() {
-	if (!hasPermission('CONTACT_VIEW') || !$('#campaignForm')) {
-		return;
-	}
+    if (!hasPermission('CONTACT_VIEW') || !$('#campaignForm')) {
+        return;
+    }
 
-	const listSelect = $('#campaignListSelect');
-	if (!listSelect) {
-		return;
-	}
+    const listSelect = $('#campaignListSelect');
 
-	try {
-		const selectedValues = [...listSelect.selectedOptions].map(option => option.value);
-		state.lists = await api('/contacts/lists');
+    if (!listSelect) {
+        return;
+    }
 
-		listSelect.innerHTML = '<option value="">Select an existing contact list</option>' +
-			state.lists.map(list => `<option value="${list.listId}">${formatListName(list.listName)}</option>`).join('');
+    try {
+        const selectedValues = [...listSelect.selectedOptions]
+            .map(option => option.value)
+            .filter(Boolean);
 
-		[...listSelect.options].forEach(option => {
-			if (option.value && selectedValues.includes(option.value)) {
-				option.selected = true;
-			}
-		});
-	} catch (error) {
-		showToast(error.message, true);
-	}
+        state.lists = await api('/contacts/lists');
+
+        listSelect.innerHTML = state.lists
+            .map(list => `
+                <option value="${list.listId}">
+                    ${formatListName(list.listName)}
+                </option>
+            `)
+            .join('');
+
+        [...listSelect.options].forEach(option => {
+            option.selected = selectedValues.includes(option.value);
+        });
+    } catch (error) {
+        showToast(error.message, true);
+    }
 }
 
 async function login(event) {
@@ -1533,145 +1577,88 @@ async function signup(event) {
 	}
 }
 
+
 async function submitResource(event) {
+    event.preventDefault();
 
-	event.preventDefault();
+    const form = event.currentTarget;
+    const data = Object.fromEntries(new FormData(form));
 
-	const form =
-		event.currentTarget;
+    if (form.dataset.resource === 'campaigns') {
+        const listSelect = $('#campaignListSelect');
 
-	if (form.closest('#campaignContactForm')) {
-		const contactName = (form.querySelector('[name="contactName"]')?.value || '').trim();
-		const contactNumbers = (form.querySelector('[name="contactNumbers"]')?.value || '').trim();
-		if (!contactNumbers) {
-			showToast('Contact phone number is required', true);
-			return;
-		}
+        const listIds = listSelect
+            ? [...listSelect.selectedOptions]
+                .map(option => option.value)
+                .filter(Boolean)
+            : [];
 
-		const fileInput = form.querySelector('input[type="file"]');
-		const selectedLists = [...($('#campaignListSelect')?.selectedOptions || [])]
-			.map(option => option.value)
-			.filter(Boolean);
+        const manualContacts = [
+            ...document.querySelectorAll('.campaign-manual-contact')
+        ]
+            .map(row => ({
+                contactName: row.querySelector('[name="contactName"]').value.trim(),
+                contactNumbers: row.querySelector('[name="contactNumbers"]').value.trim()
+            }))
+            .filter(contact => contact.contactName || contact.contactNumbers);
 
-		try {
-			if (fileInput && fileInput.files && fileInput.files.length > 0) {
-				const uploadData = new FormData();
-				uploadData.append('file', fileInput.files[0]);
-				const uploadResult = await api('/contacts/upload', {
-					method: 'POST',
-					body: uploadData
-				});
-				if (uploadResult && uploadResult.listHash) {
-					selectedLists.push(uploadResult.listHash);
-				}
-			}
+        if (!listIds.length && !manualContacts.length) {
+            showToast('Select a contact list or add a contact', true);
+            return;
+        }
 
-			const campaignName = $('#campaignNameInput')?.value?.trim();
-			let listName = '';
-			if (campaignName) {
-				listName = `${campaignName} Audience`;
-			} else if (contactName) {
-				listName = `${contactName} List`;
-			} else {
-				listName = 'Campaign Audience';
-			}
+        if (manualContacts.some(contact =>
+            !contact.contactName || !contact.contactNumbers
+        )) {
+            showToast('Complete both fields for every manual contact', true);
+            return;
+        }
 
-			const payload = {
-				contactName: contactName || 'Contact',
-				contactNumbers,
-				sourceListIds: selectedLists,
-				createNewList: true,
-				listName
-			};
+        data.listIds = listIds;
+        data.manualContacts = manualContacts;
+        delete data.listId;
 
-			const result = await api('/contacts', {
-				method: 'POST',
-				body: JSON.stringify(payload)
-			});
+        if (data.templateId) {
+            data.templateId = Number(data.templateId);
+        }
+    }
 
-			const panel = form.closest('.nested-form') || form.closest('.form-panel');
-			if (panel) panel.classList.add('hidden');
-			form.reset();
+    try {
+        const result = await api(`/${form.dataset.resource}`, {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
 
-			showToast(`Contact saved and audience list "${formatListName(result.listName || listName)}" created!`);
+        const panel = form.closest('.form-panel');
 
-			await loadResource('contacts');
-			await loadLists();
+        if (panel) {
+            panel.classList.add('hidden');
+        }
 
-			const targetListId = result.listId || (result.contactLists && result.contactLists[result.contactLists.length - 1]?.listId);
-			if (targetListId) {
-				const listSelect = $('#campaignListSelect');
-				if (listSelect) {
-					listSelect.value = targetListId;
-					[...listSelect.options].forEach(opt => {
-						opt.selected = (opt.value === targetListId);
-					});
-				}
-			}
-		} catch (error) {
-			showToast(error.message, true);
-		}
-		return;
-	}
+        form.reset();
 
-	const data =
-		Object.fromEntries(
-			new FormData(form)
-		);
+        if (form.dataset.resource === 'campaigns') {
+            const contactsContainer = $('#campaignManualContacts');
 
-	if (form.dataset.resource === 'campaigns') {
-		const listSelect = $('#campaignListSelect');
-		const selectedListIds = listSelect
-			? [...listSelect.selectedOptions].map(option => option.value).filter(Boolean).join(',')
-			: '';
+            if (contactsContainer) {
+                contactsContainer.innerHTML = `
+                    <div class="campaign-manual-contact">
+                        <input name="contactName" placeholder="Contact name" required>
+                        <input name="contactNumbers" placeholder="Phone number(s)" required>
+                    </div>
+                `;
+            }
 
-		if (!selectedListIds) {
-			showToast('Please select or create an audience list for this campaign', true);
-			return;
-		}
-		data.listId = selectedListIds;
-	}
+            await loadLists();
+            await loadResource('contacts');
+        }
 
-	if (data.templateId) {
-		data.templateId =
-			Number(data.templateId);
-	}
+        showToast('Saved successfully');
+        await loadResource(form.dataset.resource);
 
-	try {
-
-		const result = await api(
-			`/${form.dataset.resource}`,
-			{
-				method: 'POST',
-				body: JSON.stringify(data)
-			}
-		);
-
-		const panel =
-			form.closest('.nested-form') ||
-			form.closest('.form-panel');
-
-		if (panel) {
-			panel.classList.add('hidden');
-		}
-
-		form.reset();
-
-		showToast(
-			'Saved successfully'
-		);
-
-		await loadResource(
-			form.dataset.resource
-		);
-
-	} catch (error) {
-
-		showToast(
-			error.message,
-			true
-		);
-	}
+    } catch (error) {
+        showToast(error.message, true);
+    }
 }
 
 async function uploadContacts(event) {
@@ -2088,6 +2075,41 @@ document.addEventListener(
 	}
 );
 
+
+$('#addCampaignContactButton')?.addEventListener('click', () => {
+    const container = $('#campaignManualContacts');
+
+    if (!container) {
+        return;
+    }
+
+    const row = document.createElement('div');
+    row.className = 'campaign-manual-contact';
+
+    row.innerHTML = `
+        <input name="contactName" placeholder="Contact name" required>
+        <input name="contactNumbers" placeholder="Phone number(s)" required>
+        <button type="button" class="table-action remove-campaign-contact">
+            Remove
+        </button>
+    `;
+
+    container.appendChild(row);
+});
+
+$('#campaignManualContacts')?.addEventListener('click', event => {
+    const button = event.target.closest('.remove-campaign-contact');
+
+    if (button) {
+        button.closest('.campaign-manual-contact')?.remove();
+    }
+});
+
+$('#closeCampaignContactButton')?.addEventListener('click', () => {
+    $('#campaignContactForm')?.classList.add('hidden');
+});
+
+
 $('#loginForm')
 	.addEventListener(
 		'submit',
@@ -2151,29 +2173,43 @@ $('#cancelPermissionDialog')
 		closePermissionDialog
 	);
 
+
 $('#confirmPermissionDialog')
-	.addEventListener(
-'click',
-async () => {
-	const dialog = $('#permissionDialog');
-	const requestId = dialog.dataset.requestId;
+	.addEventListener('click', async () => {
+		const dialog = $('#permissionDialog');
+		const requestId = dialog.dataset.requestId;
+		const role = $('#approvalRole').value;
+		const permissions = $$('#permissionOptions input[type="checkbox"]:checked')
+			.map(input => input.value);
 
-	try {
-				await api(
-					`/users/${requestId}/approve`,
-					{
-						method: 'PUT'
-					}
-				);
-
-				closePermissionDialog();
-				showToast('Account approved with selected permissions');
-				await loadResource('requests');
-			} catch (error) {
-				showToast(error.message, true);
-			}
+		if (!role) {
+			showToast('Please select a role', true);
+			return;
 		}
-	);
+
+		if (permissions.length === 0) {
+			showToast('Select at least one permission', true);
+			return;
+		}
+
+		try {
+			await api(`/users/${requestId}/approve`, {
+				method: 'PUT',
+				body: JSON.stringify({
+					role,
+					permissions
+				})
+			});
+
+			closePermissionDialog();
+			showToast('Account activated successfully');
+			await loadResource('requests');
+			await loadResource('users');
+		} catch (error) {
+			showToast(error.message, true);
+		}
+	});
+
 
 document.addEventListener('click', event => {
 	const paginationButton = event.target.closest('[data-page-section][data-page-action]');
@@ -2297,3 +2333,9 @@ $('#messageStatus')
 			renderMessages();
 		}
 	);
+
+
+
+$$('.resource-form[data-resource]').forEach(form => {
+    form.addEventListener('submit', submitResource);
+});
