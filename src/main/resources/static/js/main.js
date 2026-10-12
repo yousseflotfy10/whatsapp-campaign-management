@@ -60,6 +60,30 @@ function displayLabel(value) {
 		);
 }
 
+function formatListName(name, fallback = 'Contact list') {
+	if (!name || !String(name).trim()) return fallback;
+	const trimmed = String(name).trim();
+	if (/^[a-f0-9]{32,64}$/i.test(trimmed)) {
+		return fallback;
+	}
+	return trimmed;
+}
+
+function formatContactLists(item) {
+	if (item.contactLists && item.contactLists.length) {
+		const names = item.contactLists
+			.map(l => formatListName(l.listName || l.listId))
+			.filter(Boolean);
+		if (names.length) {
+			return names.join(', ');
+		}
+	}
+	if (item.listName) {
+		return formatListName(item.listName);
+	}
+	return '—';
+}
+
 function applyProfessionalLabels() {
 	const workspaceLabel = document.querySelector('.auth-aside p');
 	const topbarLabel = document.querySelector('.topbar .eyebrow');
@@ -542,7 +566,7 @@ function listNamesForIds(listIds) {
 	const namesById = new Map(
 		(state.lists || []).map(list => [
 			String(list.listId),
-			list.listName || list.listId
+			formatListName(list.listName)
 		])
 	);
 
@@ -550,7 +574,7 @@ function listNamesForIds(listIds) {
 		.split(',')
 		.map(id => id.trim())
 		.filter(Boolean)
-		.map(id => namesById.get(id) || id)
+		.map(id => namesById.get(id) || 'Contact list')
 		.join(', ') || '—';
 }
 
@@ -576,8 +600,7 @@ function renderContacts(items = getFilteredContacts()) {
 				</td>
 
 				<td>
-					<strong>${item.listName || item.listId || '—'}</strong>
-					<small class="muted">${item.listId || ''}</small>
+					<strong>${formatContactLists(item)}</strong>
 				</td>
 
 				<td>
@@ -1364,34 +1387,23 @@ async function loadLists() {
 		return;
 	}
 
-	let listSelect = $('#campaignListSelect');
-	const listInput = document.querySelector('#campaignForm input[name="listId"]');
-
-	if (!listSelect && listInput) {
-		listSelect = document.createElement('select');
-		listSelect.id = 'campaignListSelect';
-		listSelect.name = 'listId';
-		listSelect.required = true;
-		listSelect.multiple = true;
-		listSelect.size = 4;
-		listSelect.className = listInput.className;
-		listInput.replaceWith(listSelect);
+	const listSelect = $('#campaignListSelect');
+	if (!listSelect) {
+		return;
 	}
 
 	try {
-		const selectedValues = listSelect
-			? [...listSelect.selectedOptions].map(option => option.value)
-			: [];
+		const selectedValues = [...listSelect.selectedOptions].map(option => option.value);
 		state.lists = await api('/contacts/lists');
-		listSelect = $('#campaignListSelect');
 
-		if (listSelect) {
-			listSelect.innerHTML = '<option value="">Select an existing contact list</option>' +
-				state.lists.map(list => `<option value="${list.listId}">${list.listName || list.listId} (${list.listId})</option>`).join('');
-			[...listSelect.options].forEach(option => {
-				option.selected = selectedValues.includes(option.value);
-			});
-		}
+		listSelect.innerHTML = '<option value="">Select an existing contact list</option>' +
+			state.lists.map(list => `<option value="${list.listId}">${formatListName(list.listName)}</option>`).join('');
+
+		[...listSelect.options].forEach(option => {
+			if (option.value && selectedValues.includes(option.value)) {
+				option.selected = true;
+			}
+		});
 	} catch (error) {
 		showToast(error.message, true);
 	}
@@ -1528,26 +1540,96 @@ async function submitResource(event) {
 	const form =
 		event.currentTarget;
 
+	if (form.closest('#campaignContactForm')) {
+		const contactName = (form.querySelector('[name="contactName"]')?.value || '').trim();
+		const contactNumbers = (form.querySelector('[name="contactNumbers"]')?.value || '').trim();
+		if (!contactNumbers) {
+			showToast('Contact phone number is required', true);
+			return;
+		}
+
+		const fileInput = form.querySelector('input[type="file"]');
+		const selectedLists = [...($('#campaignListSelect')?.selectedOptions || [])]
+			.map(option => option.value)
+			.filter(Boolean);
+
+		try {
+			if (fileInput && fileInput.files && fileInput.files.length > 0) {
+				const uploadData = new FormData();
+				uploadData.append('file', fileInput.files[0]);
+				const uploadResult = await api('/contacts/upload', {
+					method: 'POST',
+					body: uploadData
+				});
+				if (uploadResult && uploadResult.listHash) {
+					selectedLists.push(uploadResult.listHash);
+				}
+			}
+
+			const campaignName = $('#campaignNameInput')?.value?.trim();
+			let listName = '';
+			if (campaignName) {
+				listName = `${campaignName} Audience`;
+			} else if (contactName) {
+				listName = `${contactName} List`;
+			} else {
+				listName = 'Campaign Audience';
+			}
+
+			const payload = {
+				contactName: contactName || 'Contact',
+				contactNumbers,
+				sourceListIds: selectedLists,
+				createNewList: true,
+				listName
+			};
+
+			const result = await api('/contacts', {
+				method: 'POST',
+				body: JSON.stringify(payload)
+			});
+
+			const panel = form.closest('.nested-form') || form.closest('.form-panel');
+			if (panel) panel.classList.add('hidden');
+			form.reset();
+
+			showToast(`Contact saved and audience list "${formatListName(result.listName || listName)}" created!`);
+
+			await loadResource('contacts');
+			await loadLists();
+
+			const targetListId = result.listId || (result.contactLists && result.contactLists[result.contactLists.length - 1]?.listId);
+			if (targetListId) {
+				const listSelect = $('#campaignListSelect');
+				if (listSelect) {
+					listSelect.value = targetListId;
+					[...listSelect.options].forEach(opt => {
+						opt.selected = (opt.value === targetListId);
+					});
+				}
+			}
+		} catch (error) {
+			showToast(error.message, true);
+		}
+		return;
+	}
+
 	const data =
 		Object.fromEntries(
 			new FormData(form)
 		);
 
-	if (form.closest('#campaignContactForm')) {
-		const selectedLists = [...($('#campaignListSelect')?.selectedOptions || [])]
-			.map(option => option.value);
-		if (!selectedLists.length) {
-			showToast('Select a contact list before adding a contact', true);
+	if (form.dataset.resource === 'campaigns') {
+		const listSelect = $('#campaignListSelect');
+		const selectedListIds = listSelect
+			? [...listSelect.selectedOptions].map(option => option.value).filter(Boolean).join(',')
+			: '';
+
+		if (!selectedListIds) {
+			showToast('Please select or create an audience list for this campaign', true);
 			return;
 		}
-		data.listId = '';
-		data.listName = $('#campaignForm input[name="campaignName"]')?.value || 'Manual contact list';
-	}
-
-	if (form.dataset.resource === 'campaigns') {
-		data.listId = [...document.querySelectorAll('#campaignListSelect option:checked')]
-			.map(option => option.value)
-			.join(',');
+		data.listId = selectedListIds;
 	}
 
 	if (data.templateId) {
@@ -1569,7 +1651,9 @@ async function submitResource(event) {
 			form.closest('.nested-form') ||
 			form.closest('.form-panel');
 
-		panel.classList.add('hidden');
+		if (panel) {
+			panel.classList.add('hidden');
+		}
 
 		form.reset();
 
@@ -1580,15 +1664,6 @@ async function submitResource(event) {
 		await loadResource(
 			form.dataset.resource
 		);
-
-		if (form.closest('#campaignContactForm')) {
-			await loadLists();
-			const newList = [...$('#campaignListSelect').options]
-				.find(option => option.value === result.listId);
-			if (newList) {
-				newList.selected = true;
-			}
-		}
 
 	} catch (error) {
 
@@ -1708,7 +1783,7 @@ async function uploadCampaignContacts(event) {
 		);
 		await loadLists();
 
-		const campaignList = $('#campaignForm [name="listId"]');
+		const campaignList = $('#campaignListSelect');
 		const uploadedList = campaignList && [...campaignList.options]
 			.find(option => option.value === result.listHash);
 		if (uploadedList) {

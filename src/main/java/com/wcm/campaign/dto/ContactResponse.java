@@ -11,6 +11,8 @@ public class ContactResponse {
     private String contactNumbers;
     private Boolean active;
     private List<ContactListResponse> contactLists;
+    private String listId;
+    private String listName;
 
     public ContactResponse() {
     }
@@ -23,6 +25,11 @@ public class ContactResponse {
         this.contactLists = contact.getContactLists().stream()
                 .map(contactList -> new ContactListResponse(contactList.getListId(), contactList.getListName()))
                 .toList();
+        if (this.contactLists != null && !this.contactLists.isEmpty()) {
+            ContactListResponse last = this.contactLists.get(this.contactLists.size() - 1);
+            this.listId = last.listId();
+            this.listName = last.listName();
+        }
     }
 
     public Long getContactId() {
@@ -63,5 +70,21 @@ public class ContactResponse {
 
     public void setContactLists(List<ContactListResponse> contactLists) {
         this.contactLists = contactLists;
+    }
+
+    public String getListId() {
+        return listId;
+    }
+
+    public void setListId(String listId) {
+        this.listId = listId;
+    }
+
+    public String getListName() {
+        return listName;
+    }
+
+    public void setListName(String listName) {
+        this.listName = listName;
     }
 }

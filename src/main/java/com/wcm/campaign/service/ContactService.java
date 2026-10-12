@@ -79,7 +79,70 @@ public class ContactService {
             logger.info("Contact created successfully with id {}", contact.getContactId());
         }
 
-        if (request.getListId() != null && !request.getListId().isBlank()) {
+        boolean shouldCreateNewList = Boolean.TRUE.equals(request.getCreateNewList())
+                || (request.getListId() == null || request.getListId().isBlank())
+                || (request.getListName() != null && !request.getListName().isBlank())
+                || (request.getSourceListIds() != null && !request.getSourceListIds().isEmpty());
+
+        if (shouldCreateNewList && (request.getListId() == null || request.getListId().isBlank() || Boolean.TRUE.equals(request.getCreateNewList()))) {
+            Map<String, BulkContactRow> allRows = new LinkedHashMap<>();
+            List<Contact> sourceContacts = new ArrayList<>();
+
+            if (request.getSourceListIds() != null) {
+                for (String sourceId : request.getSourceListIds()) {
+                    if (sourceId == null || sourceId.isBlank()) {
+                        continue;
+                    }
+                    Optional<ContactList> sourceListOpt = contactListRepository.findById(sourceId.trim());
+                    if (sourceListOpt.isPresent()) {
+                        ContactList sourceList = sourceListOpt.get();
+                        for (Contact c : sourceList.getContacts()) {
+                            if (Boolean.TRUE.equals(c.getIsActive()) && c.getContactNumbers() != null) {
+                                allRows.put(c.getContactNumbers(), new BulkContactRow(c.getContactName(), c.getContactNumbers()));
+                                sourceContacts.add(c);
+                            }
+                        }
+                    }
+                }
+            }
+
+            allRows.put(contact.getContactNumbers(), new BulkContactRow(contact.getContactName(), contact.getContactNumbers()));
+
+            List<BulkContactRow> rowsList = new ArrayList<>(allRows.values());
+            String listHash = generateListHash(rowsList);
+
+            String listName = request.getListName();
+            if (listName == null || listName.isBlank()) {
+                if (request.getSourceListIds() != null && !request.getSourceListIds().isEmpty()) {
+                    String firstSourceId = request.getSourceListIds().get(0);
+                    Optional<ContactList> sourceListOpt = contactListRepository.findById(firstSourceId.trim());
+                    String sourceName = sourceListOpt.map(ContactList::getListName).orElse("Audience");
+                    listName = sourceName + " + " + contact.getContactName();
+                } else {
+                    listName = contact.getContactName() + " List";
+                }
+            }
+
+            ContactList targetList;
+            Optional<ContactList> existingListOpt = contactListRepository.findByListHash(listHash);
+            if (existingListOpt.isPresent()) {
+                targetList = existingListOpt.get();
+            } else {
+                targetList = new ContactList(listHash, listName.trim(), listHash);
+                targetList = contactListRepository.save(targetList);
+            }
+
+            contact.addContactList(targetList);
+            contact = contactRepository.save(contact);
+
+            for (Contact sc : sourceContacts) {
+                sc.addContactList(targetList);
+                contactRepository.save(sc);
+            }
+
+            logger.info("Contact {} associated with audience list {}", contact.getContactId(), targetList.getListId());
+
+        } else if (request.getListId() != null && !request.getListId().isBlank()) {
 
             ContactList contactList = contactListRepository.findById(request.getListId())
                     .orElseThrow(() -> new IllegalArgumentException("Contact list not found: " + request.getListId()));

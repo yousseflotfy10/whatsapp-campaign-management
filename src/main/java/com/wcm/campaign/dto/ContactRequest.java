@@ -12,6 +12,9 @@ public class ContactRequest {
     private String contactNumbers;
 
     private String listId;
+    private String listName;
+    private java.util.List<String> sourceListIds;
+    private Boolean createNewList;
 
     public ContactRequest() {
     }
@@ -38,5 +41,29 @@ public class ContactRequest {
 
     public void setListId(String listId) {
         this.listId = listId;
+    }
+
+    public String getListName() {
+        return listName;
+    }
+
+    public void setListName(String listName) {
+        this.listName = listName;
+    }
+
+    public java.util.List<String> getSourceListIds() {
+        return sourceListIds;
+    }
+
+    public void setSourceListIds(java.util.List<String> sourceListIds) {
+        this.sourceListIds = sourceListIds;
+    }
+
+    public Boolean getCreateNewList() {
+        return createNewList;
+    }
+
+    public void setCreateNewList(Boolean createNewList) {
+        this.createNewList = createNewList;
     }
 }

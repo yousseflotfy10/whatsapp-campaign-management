@@ -79,6 +79,7 @@ public class WhatsAppWebhookController {
             @RequestHeader(name = "X-Hub-Signature-256", required = false) String signature,
             @RequestBody byte[] rawBody
     ) {
+        System.out.println("signature " + signature + "phone" +  phoneNumberId + "raw"+ rawBody);
         if (phoneNumberId != null && !phoneNumberId.equals(properties.getPhoneNumberId())) {
             logger.warn("Webhook rejected for unexpected phone number ID: {}", phoneNumberId);
             return ResponseEntity.notFound().build();
@@ -87,6 +88,7 @@ public class WhatsAppWebhookController {
         logger.info("Webhook POST received: pathPhoneNumberId={}", phoneNumberId == null ? "not supplied" : phoneNumberId);
 
         boolean signatureValid = isValidSignature(signature, rawBody);
+        System.out.println("Signature value = " + signatureValid) ;
         if (properties.isWebhookSignatureValidationEnabled() && !signatureValid) {
             logger.warn("Webhook rejected because signature validation failed");
             return ResponseEntity.status(403).build();
