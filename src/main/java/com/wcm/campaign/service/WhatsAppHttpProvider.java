@@ -17,6 +17,8 @@ import org.springframework.web.client.RestClientResponseException;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -39,7 +41,8 @@ public class WhatsAppHttpProvider implements WhatsAppProvider {
     public WhatsAppSendResult sendTemplateMessage(
             String phoneNumber,
             String templateName,
-            String language
+            String language,
+            List<String> bodyParameters
     ) {
         if (!properties.isEnabled()) {
             logger.warn("WhatsApp send skipped: provider is disabled");
@@ -56,15 +59,28 @@ public class WhatsAppHttpProvider implements WhatsAppProvider {
             );
         }
 
+        Map<String, Object> templateRequest = new LinkedHashMap<>();
+        templateRequest.put("name", templateName);
+        templateRequest.put("language", Map.of("code", language));
+
+        if (bodyParameters != null && !bodyParameters.isEmpty()) {
+            List<Map<String, Object>> parameters = new ArrayList<>();
+            for (String parameter : bodyParameters) {
+                parameters.add(Map.of(
+                        "type", "text",
+                        "text", parameter == null ? "" : parameter));
+            }
+            templateRequest.put("components", List.of(Map.of(
+                    "type", "body",
+                    "parameters", parameters)));
+        }
+
         Map<String, Object> request = Map.of(
                 "messaging_product", "whatsapp",
                 "recipient_type", "individual",
-                "to", phoneNumber,
+                "to", phoneNumber.startsWith("+") ? phoneNumber.substring(1) : phoneNumber,
                 "type", "template",
-                "template", Map.of(
-                        "name", templateName,
-                        "language", Map.of("code", language)
-                )
+                "template", templateRequest
         );
 
         String url = properties.getBaseUrl() + "/"
@@ -182,7 +198,7 @@ public class WhatsAppHttpProvider implements WhatsAppProvider {
                 "components", List.of(
                         Map.of(
                                 "type", "BODY",
-                                "text", content
+                                "text", content.replace("{{name}}", "{{1}}")
                         )
                 )
         );

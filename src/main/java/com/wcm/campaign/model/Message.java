@@ -35,6 +35,9 @@ public class Message {
     @Column(unique = true)
     private String providerMessageId;
 
+    @Column(name = "recipient_phone_number", length = 20)
+    private String recipientPhoneNumber;
+
     @Column(nullable = false)
     private String messageType;
 
@@ -99,6 +102,14 @@ public class Message {
 
     public void setProviderMessageId(String providerMessageId) {
         this.providerMessageId = providerMessageId;
+    }
+
+    public String getRecipientPhoneNumber() {
+        return recipientPhoneNumber;
+    }
+
+    public void setRecipientPhoneNumber(String recipientPhoneNumber) {
+        this.recipientPhoneNumber = recipientPhoneNumber;
     }
 
     public String getMessageType() {

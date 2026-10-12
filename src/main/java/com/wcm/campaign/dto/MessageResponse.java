@@ -10,6 +10,7 @@ public class MessageResponse {
     private Long campaignId;
     private Long contactId;
     private Long templateId;
+    private String recipientPhoneNumber;
     private String messageContent;
     private String status;
     private LocalDateTime sentAt;
@@ -30,6 +31,7 @@ public class MessageResponse {
         if (message.getTemplate() != null) {
             this.templateId = message.getTemplate().getTemplateId();
         }
+        this.recipientPhoneNumber = message.getRecipientPhoneNumber();
         this.messageContent = message.getMessageContent();
         this.status = message.getStatus();
         this.sentAt = message.getSentAt();
@@ -66,6 +68,14 @@ public class MessageResponse {
 
     public void setTemplateId(Long templateId) {
         this.templateId = templateId;
+    }
+
+    public String getRecipientPhoneNumber() {
+        return recipientPhoneNumber;
+    }
+
+    public void setRecipientPhoneNumber(String recipientPhoneNumber) {
+        this.recipientPhoneNumber = recipientPhoneNumber;
     }
 
     public String getMessageContent() {

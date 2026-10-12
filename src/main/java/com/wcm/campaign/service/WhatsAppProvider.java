@@ -7,7 +7,8 @@ public interface WhatsAppProvider {
     WhatsAppSendResult sendTemplateMessage(
             String phoneNumber,
             String templateName,
-            String language
+            String language,
+            List<String> bodyParameters
     );
 
     WhatsAppTemplateSubmissionResult submitTemplate(

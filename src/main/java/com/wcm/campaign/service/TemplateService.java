@@ -153,7 +153,7 @@ public class TemplateService {
         try {
             submission = whatsappProvider.submitTemplate(
                     template.getTemplateName(),
-                    template.getTemplateContent(),
+                    template.getTemplateContent().replace("{{name}}", "{{1}}"),
                     template.getLanguage(),
                     template.getCategory()
             );

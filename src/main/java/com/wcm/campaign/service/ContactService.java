@@ -556,24 +556,30 @@ public class ContactService {
         return (extensionIndex > 0 ? filename.substring(0, extensionIndex) : filename).trim();
     }
 
-    private String normalizeNumbers(String numbers) {
-
+    public List<String> getIndividualNormalizedNumbers(String numbers) {
         if (numbers == null || numbers.trim().isEmpty()) {
             throw new IllegalArgumentException("Phone number is required");
         }
 
         String[] parts = numbers.split("\\s*(?:,|;|\\||/|\\r?\\n)+\\s*");
-
-        List<String> normalized = new ArrayList<>();
+        Set<String> normalized = new LinkedHashSet<>();
 
         for (String part : parts) {
-            String number = normalizeNumber(part.trim());
-            if (!normalized.contains(number)) {
-                normalized.add(number);
+            if (part == null || part.trim().isEmpty()) {
+                continue;
             }
+            normalized.add(normalizeNumber(part.trim()));
         }
 
-        return String.join(",", normalized);
+        if (normalized.isEmpty()) {
+            throw new IllegalArgumentException("At least one valid phone number is required");
+        }
+
+        return new ArrayList<>(normalized);
+    }
+
+    private String normalizeNumbers(String numbers) {
+        return String.join(",", getIndividualNormalizedNumbers(numbers));
     }
 
     private List<String> parseCsvLine(String line) {

@@ -17,7 +17,9 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -127,16 +129,36 @@ public class MessageService {
                     "No active contacts found for this campaign");
         }
 
-        List<Long> messageIds = new ArrayList<>();
+        Map<String, Contact> uniqueRecipients = new LinkedHashMap<>();
 
         for (Contact contact : contacts) {
+            List<String> phoneNumbers = contactService.getIndividualNormalizedNumbers(
+                    contact.getContactNumbers());
+
+            for (String phoneNumber : phoneNumbers) {
+                uniqueRecipients.putIfAbsent(phoneNumber, contact);
+            }
+        }
+
+        if (uniqueRecipients.isEmpty()) {
+            throw new IllegalStateException(
+                    "No valid phone numbers found for this campaign");
+        }
+
+        List<Long> messageIds = new ArrayList<>();
+
+        for (Map.Entry<String, Contact> recipient : uniqueRecipients.entrySet()) {
+            String phoneNumber = recipient.getKey();
+            Contact contact = recipient.getValue();
+
             logger.debug(
-                    "Creating message. Campaign={}, ContactId={}",
-                    campaignId, contact.getContactId());
+                    "Creating message. Campaign={}, ContactId={}, Recipient={}",
+                    campaignId, contact.getContactId(), phoneNumber);
 
             Message message = new Message();
             message.setCampaign(campaign);
             message.setContact(contact);
+            message.setRecipientPhoneNumber(phoneNumber);
             message.setTemplate(template);
             message.setMessageContent(
                     generateMessageContent(
@@ -148,10 +170,11 @@ public class MessageService {
             messageIds.add(savedMessage.getMessageId());
 
             logger.debug(
-                    "Message created. MessageId={}, Campaign={}, ContactId={}, Status={}",
+                    "Message created. MessageId={}, Campaign={}, ContactId={}, Recipient={}, Status={}",
                     savedMessage.getMessageId(),
                     campaignId,
                     contact.getContactId(),
+                    phoneNumber,
                     savedMessage.getStatus());
         }
 
@@ -489,7 +512,9 @@ public class MessageService {
             contactName = "";
         }
 
-        String content = templateContent.replace("{{name}}", contactName);
+        String content = templateContent
+                .replace("{{name}}", contactName)
+                .replace("{{1}}", contactName);
 
         logger.debug(
                 "Message content generated. ContactId={}",

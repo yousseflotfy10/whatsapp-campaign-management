@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 public class MessageWorkerProcessor {
@@ -69,11 +70,16 @@ public class MessageWorkerProcessor {
             return;
         }
 
-        String phoneNumber = contact.getContactNumbers();
+        String phoneNumber = message.getRecipientPhoneNumber();
 
         if (phoneNumber == null || phoneNumber.trim().isEmpty()) {
-            logger.error("Message {} contact does not have a phone number", messageId);
-            markAsFailed(message, null, "Contact does not have a phone number");
+            logger.error(
+                    "Message {} has no individual recipient number. Regenerate this message from its campaign.",
+                    messageId);
+            markAsFailed(
+                    message,
+                    null,
+                    "Message has no individual recipient number. Regenerate the campaign messages.");
             return;
         }
 
@@ -94,7 +100,20 @@ public class MessageWorkerProcessor {
         try {
             logger.info("Worker {} processing message {}", Thread.currentThread().getName(), messageId);
 
-            WhatsAppSendResult result = whatsappProvider.sendTemplateMessage(phoneNumber, templateName, language);
+            List<String> bodyParameters = List.of();
+            String templateContent = template.getTemplateContent();
+            if (templateContent != null
+                    && (templateContent.contains("{{name}}")
+                    || templateContent.contains("{{1}}"))) {
+                String contactName = contact.getContactName();
+                bodyParameters = List.of(contactName == null ? "" : contactName);
+            }
+
+            WhatsAppSendResult result = whatsappProvider.sendTemplateMessage(
+                    phoneNumber,
+                    templateName,
+                    language,
+                    bodyParameters);
 
             if (result == null) {
                 logger.error("WhatsApp provider returned no response for message {}", messageId);
